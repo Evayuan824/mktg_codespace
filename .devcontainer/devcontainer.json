@@ -1,0 +1,30 @@
+{
+  "name": "Python 3.12 + Quarto",
+  "build": { "dockerfile": "Dockerfile" },
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": "true",
+      "username": "vscode",
+      "userUid": "1000",
+      "userGid": "1000",
+      "upgradePackages": "true"
+    },
+    "ghcr.io/devcontainers/features/git:1": { "version": "latest", "ppa": "false" },
+    "ghcr.io/rocker-org/devcontainer-features/quarto-cli:1": {
+      "version": "prerelease",
+      "installTinyTex": "true",
+      "installChromium": "false"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "quarto.quarto",
+        "ms-toolsai.jupyter",
+        "ms-toolsai.datawrangler",
+        "github.copilot"
+      ]
+    }
+  },
+  "postCreateCommand": "pip3 install -r requirements.txt"
+}
