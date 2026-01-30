@@ -1,0 +1,384 @@
+
+---
+title: "Lecture Notes: Polars Expressions Part 1"
+subtitle: "MKTG - LEE"
+execute: 
+  echo: true
+  eval: true
+format:
+  html:
+    code-fold: false
+    embed-resources: true
+jupyter: python3
+---
+
+# Basic Operators
+
+We will discuss expressions in Polars.
+
+## Importing Polars
+
+As always, start by importing the Polars library:
+
+```{python}
+import polars as pl
+import numpy as np
+```
+
+
+## Loading Data
+
+
+```{python}
+
+df = pl.DataFrame(
+    {
+        "nrs": [1, 2, 3, None, 5],
+        "names": ["foo", "ham", "spam", "egg", None],
+        "random": np.random.rand(5),
+        "groups": ["A", "A", "B", "C", "B"],
+    }
+)
+print(df)
+
+```
+
+## Math Operators
+
+```{python}
+
+df_numerical = df.select(
+    (pl.col("nrs") + 5).alias("nrs + 5"),
+    (pl.col("nrs") - 5).alias("nrs - 5"),
+    (pl.col("nrs") * pl.col("random")).alias("nrs * random"),
+    (pl.col("nrs") / pl.col("random")).alias("nrs / random"),
+)
+print(df_numerical)
+
+```
+
+Here’s what's happening:
+
+- The alias() function provides a name for the current column.
+- Check for yourself: what happens if you don't include .alias() in the code above?
+
+- The 'None' value shows up as 'null' in the dataframe.
+
+
+## Logical Operators
+
+
+```{python}
+
+df_logical = df.select(
+    (pl.col("nrs") > 1).alias("nrs > 1"),
+    (pl.col("random") <= 0.5).alias("random <= .5"),
+    (pl.col("nrs") != 1).alias("nrs != 1"),
+    (pl.col("nrs") == 1).alias("nrs == 1"),
+    ((pl.col("random") <= 0.5) & (pl.col("nrs") > 1)).alias("and_expr"),  # and
+    ((pl.col("random") <= 0.5) | (pl.col("nrs") > 1)).alias("or_expr"),  # or
+)
+print(df_logical)
+
+```
+
+Here’s what's happening:
+
+- The logical operators work as expected
+
+- In polars, when you specify the 'and' and 'or' conditions, you use '&' for 'and', and '|' for 'or'.
+
+
+
+# Column Selectors
+
+Polars provides us a way to select columns using code rather than just typing the column name directly.
+
+
+## Create toy data
+
+```{python}
+
+from datetime import date, datetime
+
+import polars as pl
+
+df_time = pl.DataFrame(
+    {
+        "id": [9, 4, 2],
+        "place": ["Mars", "Earth", "Saturn"],
+        "date": pl.date_range(date(2022, 1, 1), date(2022, 1, 3), "1d", eager=True),
+        "sales": [33.4, 2142134.1, 44.7],
+        "has_people": [False, True, False],
+        "logged_at": pl.datetime_range(
+            datetime(2022, 12, 1), datetime(2022, 12, 1, 0, 0, 2), "1s", eager=True
+        ),
+    }
+).with_row_index("index")
+print(df_time)
+
+
+```
+
+- The code above loads a new package for use (i.e., datatime)
+
+- The pl.datetime_range() function allows you to create a series of timestamps just by specifying beginning and end timestamps.
+
+- with_row_index() creates an index column
+
+
+## Select All Columns
+
+```{python}
+
+out_all = df_time.select(pl.col("*"))
+
+# Is equivalent to
+#out = df.select(pl.all())
+print(out_all)
+
+
+out_exclude = df_time.select(pl.col("*").exclude("logged_at", "index"))
+print(out_exclude)
+
+```
+
+- The '*' symbol is the wildcard symbol, which means it will match all columns!!!!!
+
+- You can combine the * with the exclude function to select all but a few columns.
+
+
+```{python}
+
+out_time = df_time.select(pl.col("date", "logged_at").dt.to_string("%Y-%h-%d"))
+print(out_time)
+
+```
+
+- We first select a couple columns, then we call the dt.to_string() function to transform the columns by displaying the dates in a certain format.
+
+- The documentation can be found here: [date time formatting syntax](https://docs.rs/chrono/latest/chrono/format/strftime/index.html#specifiers)
+
+
+## Select by Data Type
+
+```{python}
+out_type = df_time.select(pl.col(pl.Int64, pl.UInt32, pl.Boolean).n_unique())
+print(out_type)
+
+
+```
+
+- Common Polars data types can be found [here](https://docs.pola.rs/user-guide/concepts/data-types/overview/)
+
+
+## Select by Selectors
+
+We can also use specific "selector" functions to access columns.
+
+```{python}
+
+import polars.selectors as cs
+
+out_selector = df_time.select(cs.integer(), cs.string())
+print(out_selector)
+
+
+# set difference
+out_difference = df_time.select(cs.numeric() - cs.first())
+print(out_difference)
+
+```
+
+- The first() selector selects the first column in the data set.
+
+- cs.numeric() - cs.first() means selecting all numeric columms but excluding the first column.
+
+
+
+```{python}
+
+out_complex = df_time.select(cs.by_name("index") | ~cs.numeric())
+print(out_complex)
+
+
+
+```
+
+- The above selects the column named index() as well as the non-numeric columns. 
+
+- Note the '~' symbol means 'not'. So ~cs.numeric() means non-numeric.
+
+
+
+## Converting selectors to expressions
+
+```{python}
+
+df2 = pl.DataFrame(
+    {
+         "colx": ["aa", "bb", "cc"],
+         "coly": [True, False, True],
+         "colz": [1, 2, 3],
+         }
+)
+
+
+print(df2)
+
+print("Print df2.select(~cs.boolean()) ")
+print(df2.select(~cs.boolean()))
+
+
+print("Print df2.select(~cs.boolean().as_expr())")
+print(df2.select(~cs.boolean().as_expr()))
+
+```
+
+- If you call the as_expr() function, you make sure that you are modifying the content of the column, rather than modifying the column selections.
+
+
+## Check Selector Behaviors
+
+```{python}
+from polars.selectors import expand_selector
+
+out_check1 = cs.temporal()
+print(expand_selector(df_time, out_check1))
+
+out_check2 = ~(cs.temporal() | cs.numeric())
+print(expand_selector(df_time, out_check2))
+
+```
+
+
+# Functions
+
+We have seen a few functions so far:
+
+- alias() names a given column
+
+There are a lot more functions, such as 
+
+- n_unique() returns the number of unique values
+
+To create a column based on conditions, you use the following syntax: pl.when().then().otherwise()
+
+```{python}
+
+
+df_conditional = df.select(
+    pl.col("nrs"),
+    pl.when(pl.col("nrs") > 2)
+    .then(pl.lit(True)) # lit stands for literally like this tells the computer to literally print true or false
+    .otherwise(pl.lit(False))
+    .alias("conditional"),
+)
+print(df_conditional)
+
+
+
+df_more_conditional = df.select(
+    pl.col("nrs"),
+    pl.when(pl.col("nrs") > 4)
+    .then(pl.lit("High"))
+    .when(pl.col("nrs")>2)
+    .then(pl.lit("Medium"))
+    .otherwise(pl.lit("Low"))
+    .alias("conditional"),
+)
+print(df_more_conditional)
+
+```
+
+- From the df_more_conditional example, you see you can keep adding .when().then() if you have more than 2 conditions.
+
+# Summary
+
+In this lecture, we covered key expressions in Polars, including:
+
+1. **Operators**: math operators, logitcal operators.
+
+2. **Column Selection**: by name, by type, by using column selectors.
+
+3. **functions**: introduce simple functions and conditionals.
+
+
+# Exercise
+
+Take the **df_exercise** dataframe defined below. Then answer the following questions.
+
+```{python}
+
+df_exercise = pl.DataFrame(
+    {
+        "id": [9, 4, 2],
+        "place": ["Mars", "Earth", "Saturn"],
+        "date": pl.date_range(date(2022, 1, 1), date(2022, 1, 3), "1d", eager=True),
+        "sales": [33.4, 2142134.1, 1440.7],
+        "has_people": [False, True, False],
+        "logged_at": pl.datetime_range(
+            datetime(2022, 12, 1), datetime(2022, 12, 1, 0, 0, 2), "1s", eager=True
+        ),
+    }
+)
+
+
+```
+
+
+
+## Q1
+
+Use an appropriate column selector to select all non-numeric columns. Save the resulting dataframe to **df_q1** and display it.
+
+```{python}
+
+df_q1 = df_exercise.select(~cs.numeric()) # tilda (~) negates. aka this gives all non-numeric columns 
+print(df_q1)
+
+```
+
+
+
+## Q2
+
+Select just the **id** and **place**  columns from **df_exercise**. Then add a column called **is_earth**, which should be **Yes** if the **place** is earth, and **No**. Save the results to **df_q2** and display it.
+
+
+```{python}
+
+df_q2 = df_exercise.select( # used .select because it said select just ... 
+    pl.col("id"),
+    pl.col("place"), 
+    pl.when(pl.col("place") == "Earth")
+    .then(pl.lit("Yes"))
+    .otherwise(pl.lit("No"))
+    .alias("is_earth"),
+)
+
+print(df_q2)
+
+# python is case sensitive!
+
+```
+
+
+## Q3
+
+Take all columns in **df_exercise** and add a new column called **sales_level** to it. The **sales_level** column should be "High" if **sales** is at least 10000, "Medium" if **sales** is at least 1000 but below 10000, and "Low" otherwise. Save the new dataframe to a variable named **df_q3** and display it.
+
+```{python}
+
+df_q3 = df_exercise.with_columns( # used .with_columns because it said take "all" columns and add a new column 
+    pl.when(pl.col("sales") >= 10000)
+    .then(pl.lit("High"))
+    .when(pl.col("sales") >= 1000)
+    .then(pl.lit("Medium"))
+    .otherwise(pl.lit("Low"))
+    .alias("sales_level")
+)
+
+print(df_q3)
+
+```
