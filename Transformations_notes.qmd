@@ -72,7 +72,7 @@ print(df_inner_customer_join)
 df_left_join = df_customers.join(df_orders, on="customer_id", how="left")
 print(df_left_join)
 
-# in a left join, the table on the left gets to keep all columns/observations. in this case it's "df_customers"
+# in a left join, the table on the left gets to keep all columns/observations. in this case it's "df_customers".
 
 ```
 
@@ -83,7 +83,7 @@ print(df_left_join)
 df_right_join = df_orders.join(df_customers, on="customer_id", how="right")
 print(df_right_join)
 
-# in a right join, the table on the right gets to keep all columns/observations. in this case it's "df_customers"
+# in a right join, the table on the right gets to keep all columns/observations. in this case it's "df_customers".
 
 ```
 
