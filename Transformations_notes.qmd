@@ -62,6 +62,7 @@ df_inner_customer_join = df_customers.join(df_orders, on="customer_id", how="inn
 print(df_inner_customer_join)
 
 # only joins tables with the same column. in this case it's "customer_id"
+# only shows values in BOTH tables 
 
 ```
 
@@ -73,6 +74,7 @@ df_left_join = df_customers.join(df_orders, on="customer_id", how="left")
 print(df_left_join)
 
 # in a left join, the table on the left gets to keep all columns/observations. in this case it's "df_customers".
+# tables on the LEFT usually take priority unless specified in a right join 
 
 ```
 
@@ -95,6 +97,8 @@ print(df_right_join)
 df_outer_join = df_customers.join(df_orders, on="customer_id", how="full")
 print(df_outer_join)
 
+# anything and anyone shows up 
+
 ```
 
 
@@ -104,6 +108,7 @@ print(df_outer_join)
 
 ### Setup
 ```{python}
+# semi and anti are filtering joins 
 
 df_cars = pl.DataFrame(
     {
@@ -123,7 +128,7 @@ df_repairs = pl.DataFrame(
 )
 print(df_repairs)
 
-
+# using right table to filter left table 
 ```
 
 ### Semi-join demo
@@ -144,6 +149,8 @@ print(df_semi_join)
 df_anti_join = df_cars.join(df_repairs, on="id", how="anti")
 print(df_anti_join)
 
+# using right table to filter OUT left table 
+# opposite of semi join - shows rows that aren't shown in the right table 
 
 ```
 
