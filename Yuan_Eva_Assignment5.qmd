@@ -161,8 +161,13 @@ Take the df_responses dataframe. Create a pivot table that displays each custome
 
 ```{python}
 
-q6 = (
-
+q6 = ( 
+    df_responses.pivot (
+    "campaign_id",
+    index="customer_id",
+    values="response",
+    aggregate_function="first" # this isn't necessary unless there's duplicate data 
+    )
 )
 
 q6
@@ -197,7 +202,12 @@ print(df_budgets)
 
 
 q7 = (
-
+    df_budgets.unpivot(
+        ["Q1", "Q2", "Q3", "Q4"],
+        index=["campaign_id", "campaign_name"],
+        variable_name = "quarter",
+        value_name = "budget"
+    )
 
 )
 
