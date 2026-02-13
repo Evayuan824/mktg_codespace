@@ -1,0 +1,447 @@
+---
+title: "Lecture Notes: LazyAPI and SQL"
+subtitle: "MKTG - LEE"
+execute: 
+  echo: true
+  eval: true
+format:
+  html:
+    code-fold: false
+    embed-resources: true
+jupyter: python3
+---
+
+
+# Eager vs Lazy Evaluation
+
+1. Eager vs Lazy Execution
+
+- Eager Execution: Operations are performed immediately and results are returned instantly, similar to Pandas.
+
+- Lazy Execution: Operations are deferred and collected into an execution plan. This plan is optimized before the actual computation begins, potentially improving performance by reducing unnecessary operations.
+
+2. Why Use Lazy Execution?
+
+- Optimization: Polars automatically optimizes query plans to minimize resource consumption (e.g., column pruning, predicate pushdown).
+
+- Efficiency: Instead of executing multiple intermediate steps, lazy execution consolidates operations into a single execution graph that minimizes redundant calculations.
+
+- Scalability: Lazy frames are especially useful when working with large datasets where performance and resource management are critical.
+
+
+## Setup
+```{python}
+
+import polars as pl
+import numpy as np
+
+# Generate a reasonable range of ages between 0 and 120
+num_rows = 10000000  # You can change this to the number of rows you need
+
+# Sample DataFrame with random ages within the range of 0 to 120
+df = pl.DataFrame({
+    "id": range(num_rows),
+    "age": np.random.randint(0, 121, size=num_rows),  # Random ages between 0 and 120
+    "salary": np.random.randint(10000, 100000, size=num_rows)  # Random salary values
+})
+
+# Display the first few rows
+print(df.head())
+
+# Display # rows and # columns
+print(df.shape)
+```
+
+## Lazy Example
+
+- note the use of lazy() and collect()
+```{python}
+import time
+
+# Convert the DataFrame to a LazyFrame
+lazy_df = df.lazy()
+
+# Start the timer
+start_time = time.time()
+
+# Lazy operations: filtering, selecting, adding a new column
+lazy_df = (
+    lazy_df
+    .with_columns((pl.col("salary") * 1.1).alias("adjusted_salary"))
+    .group_by("age")
+    .agg(pl.col("adjusted_salary").mean())
+    .filter(pl.col("age") > 115)
+
+)
+
+# Trigger execution by calling 'collect'
+result = lazy_df.collect()
+print(result)
+
+# End the timer
+end_time = time.time()
+
+# Calculate and print the elapsed time
+elapsed_time = end_time - start_time
+print(f"Execution time: {elapsed_time:.6f} seconds")
+```
+
+## Eager Example
+
+
+```{python}
+
+# Start the timer
+start_time = time.time()
+
+
+# Eager operations: filtering, selecting, adding a new column
+df_step1 = df.with_columns((pl.col("salary") * 1.1).alias("adjusted_salary"))
+
+df_step2 = df_step1.group_by("age").agg([pl.len().alias("num_people"), pl.col("adjusted_salary").mean()])
+
+df_step3 = df_step2.filter(pl.col("age") > 115)
+
+
+
+# Trigger execution by calling 'collect'
+print(df_step3)
+
+
+# End the timer
+end_time = time.time()
+
+# Calculate and print the elapsed time
+elapsed_time = end_time - start_time
+print(f"Execution time: {elapsed_time:.6f} seconds")
+
+```
+
+
+## Load Pandas
+
+```{python}
+import pandas as pd
+
+pddf = df.to_pandas()
+```
+
+
+
+## Run same code in pandas
+```{python}
+
+
+# Start the timer
+start_time = time.time()
+
+
+# Step 1: Create 'adjusted_salary' column (increase salary by 10%)
+pddf["adjusted_salary"] = pddf["salary"] * 1.1
+
+# Step 2: Group by 'age' and aggregate to get 'num_people' and mean of 'adjusted_salary'
+pddf_step2 = pddf.groupby("age").agg(
+    num_people=("age", "size"),                 # Count number of people (equivalent of len)
+    mean_adjusted_salary=("adjusted_salary", "mean")  # Mean of adjusted salary
+).reset_index()
+
+# Step 3: Filter rows where 'age' is greater than 115
+pddf_step3 = pddf_step2[pddf_step2["age"] > 115]
+
+# Display the final result
+print(pddf_step3)
+
+
+# End the timer
+end_time = time.time()
+
+# Calculate and print the elapsed time
+elapsed_time = end_time - start_time
+print(f"Execution time: {elapsed_time:.6f} seconds")
+
+```
+
+
+
+
+# SQL Crash Course for Polars Users
+
+We'll explore how to transition from Polars concepts to SQL quickly by looking at equivalent operations.
+
+SQL is great for querying relational databases, and this quick comparison will help you adapt your Polars knowledge into SQL seamlessly. 
+
+## 1. Overview: Polars vs. SQL
+  
+- Polars: A DataFrame library, similar to pandas but built for speed and efficiency, especially with larger datasets.
+  
+- SQL: A query language used for working with relational databases like PostgreSQL, MySQL, and SQLite. 
+
+Note: Polars allows us to query dataframe using sql syntax, so we will try to do that. The documentation can be found here: [Polars SQL Interface](https://docs.pola.rs/api/python/stable/reference/sql/index.html).
+
+## 2. SQL Syntax
+
+
+### Set up Data
+
+```{python}
+
+# Creating a sample dictionary for employees
+data = [
+    {"employee_id": 1, "name": "John Doe", "department": "Engineering", "salary": 60000, "age": 28, "department_id": 1},
+    {"employee_id": 2, "name": "Jane Smith", "department": "Marketing", "salary": 50000, "age": 32, "department_id": 2},
+    {"employee_id": 3, "name": "Sam Brown", "department": "Engineering", "salary": 75000, "age": 45, "department_id": 1},
+    {"employee_id": 4, "name": "Emily Davis", "department": "Sales", "salary": 55000, "age": 29, "department_id": 3},
+    {"employee_id": 5, "name": "Michael Johnson", "department": "Engineering", "salary": 80000, "age": 35, "department_id": 1},
+    {"employee_id": 6, "name": "Laura Wilson", "department": "Marketing", "salary": 45000, "age": 40, "department_id": 2}
+]
+
+departments_data = [
+{"department_id": 1, "department_location": "Boston"},
+{"department_id": 2, "department_location": "New York City"},
+{"department_id": 3, "department_location": "Chicago"}
+]
+
+
+# Create polars dataframe based on above dicts
+employees = pl.DataFrame(data)
+departments = pl.DataFrame(departments_data)
+
+```
+
+
+## Show Data
+
+### Polars
+```{python}
+
+show_pl = employees
+show_pl
+
+```
+
+### SQL
+```{python}
+
+show_query = """ # triple quotes specifying a long string, allows line breaks. can technically also write in one line but hard to read 
+SELECT *  # * selects all columns just like polars 
+FROM employees # technically doesn't need to be all caps but easier to read (SELECT and FROM)
+"""
+pl.sql(show_query).collect()
+
+
+
+```
+
+
+
+## Filter Data
+
+### Polars
+```{python}
+
+filtered_pl = employees.filter(pl.col("salary") > 50000)
+filtered_pl
+
+```
+
+### SQL
+```{python}
+# SQL
+
+filter_query = """
+SELECT * 
+FROM employees
+WHERE salary > 50000
+"""
+pl.sql(filter_query).collect()
+
+```
+
+
+## Select Columns
+
+### Polars
+```{python}
+selected_pl = employees.select(["name", "department"])
+selected_pl
+
+```
+
+### SQL
+```{python}
+select_query = """
+SELECT name, department # use column to select diff cols I want
+FROM employees
+"""
+
+pl.sql(select_query).collect()
+
+```
+
+## Group_By + Agg
+
+### Polars
+```{python}
+pl_grouped = (
+    employees
+    .group_by("department")
+    .agg(pl.col("salary").mean().alias("avg_salary"))
+)
+
+pl_grouped
+
+```
+
+### SQL
+```{python}
+agg_query = """
+SELECT department, AVG(salary) AS avg_salary # cols I want to display will be in SELECT # AS is the same as .alias()
+FROM employees
+GROUP BY department
+"""
+pl.sql(agg_query).collect()
+
+
+```
+
+
+## Sorting
+
+### Polars
+```{python}
+sorted_pl = employees.sort("salary", descending=True)
+sorted_pl
+```
+
+### SQL
+```{python}
+sort_query = """
+SELECT * 
+FROM employees
+ORDER BY salary DESC # ORDER BY is the same as .sort # salary DESC sorts it in descending order (default is desc)
+"""
+pl.sql(sort_query).collect()
+```
+
+
+## Join
+
+### Polars
+```{python}
+
+pl_joined = employees.join(departments, on="department_id", how="inner")
+pl_joined
+```
+
+### SQL
+
+```{python}
+join_query = """
+SELECT e.*, d.* EXCLUDE (department_id) # * means we want all of employees and departments table
+FROM employees e # left table 
+INNER JOIN departments d # right table 
+ON e.department_id = d.department_id # the overlapping col
+"""
+
+pl.sql(join_query).collect()
+
+```
+
+## Create New Column
+
+### Polars
+```{python}
+pl_with_col = employees.with_columns((pl.col("salary") * 1.10).alias("salary_increase"))
+pl_with_col
+
+```
+
+### SQL
+
+```{python}
+col_query = """
+SELECT *, salary * 1.10 AS salary_increase # .with_columns is basically equivalent to SELECT * # salary * 1.10 (salary_increase of 1.10) (the new col) 
+FROM employees
+"""
+
+pl.sql(col_query).collect()
+```
+
+
+# SQL Exercises
+
+Translate the polars queries below to sql
+
+## Q1 Calculate Total Salary by Department
+```{python}
+
+q1_pl = (
+    employees
+    .group_by("department_id")
+    .agg(pl.col("salary").sum().alias("total_salary"))
+)
+
+print("Polars: ", q1_pl)
+
+
+q1_query = """
+SELECT department_id, SUM(salary) AS total_salary 
+FROM employees # FROM the dataset we're using 
+GROUP BY department_id
+
+"""
+
+pl.sql(q1_query).collect()
+
+```
+
+## Q2 Filter Employees in Engineering and Calculate Average Age
+
+```{python}
+
+q2_pl = (
+    employees
+    .filter(pl.col("department_id") == 1)
+    .select(
+        pl.col("age").mean().alias("avg_age")
+    )
+)
+
+
+print("Polars: ", q2_pl)
+
+
+q2_query = """
+SELECT AVG(age) AS avg_age
+FROM employees
+WHERE department_id = 1;
+
+"""
+pl.sql(q2_query).collect()
+
+```
+
+
+## Q3: Filter Employees by Salary > 50000 and Sort by Age Descending
+
+```{python}
+
+q3_pl = (
+    employees.filter(pl.col("salary") > 50000)
+    .sort("age", descending = True)
+)
+
+print("Polars: ", q3_pl)
+
+q3_query = """
+
+SELECT *
+FROM employees
+WHERE salary > 50000
+ORDER BY age DESC
+
+"""
+
+pl.sql(q3_query).collect()
+
+```
