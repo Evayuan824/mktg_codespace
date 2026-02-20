@@ -57,6 +57,9 @@ email_bases = email.select([
     'avg_npassengers',
     'avg_price'])
 
+    # cannot analyze a text column because you can't calculate the distance 
+    # easier to analyze numeric columns 
+
 ```
 
 
@@ -67,13 +70,14 @@ Use a sklearn pipeline to streamline the process of processing the data and cond
 
 ```{python}
 
-def create_pipeline(num_clusters, random_seed = 42):
+# will copy n paste to use in assignment 6 
+def create_pipeline(num_clusters, random_seed = 42): # 42 is a randomly chosen number 
     """
     Creates a machine learning pipeline with a scaler and KMeans.
     """
     pipeline = Pipeline([
-        ('scaler', StandardScaler()),
-        ('kmeans', KMeans(n_clusters=num_clusters, random_state=random_seed))
+        ('scaler', StandardScaler()), # first step calling scaler function 
+        ('kmeans', KMeans(n_clusters=num_clusters, random_state=random_seed)) # second step calling the kmeans function with a specific number of clusters and a speific random state (random seed)
     ])
     return pipeline
 
@@ -86,10 +90,10 @@ def create_pipeline(num_clusters, random_seed = 42):
 Define a function to calculate the total within-cluster sum of squares and plot the elbow graph.
 
 ```{python}
-def calculate_totwithinss(data, k):
+def calculate_totwithinss(data, k): # tot within ss = distance, need to provide dataset and k to use this function, calculates the y value 
     kmeans_pipeline = create_pipeline(k, random_seed=10)
-    kmeans_pipeline.fit(data)
-    return kmeans_pipeline['kmeans'].inertia_
+    kmeans_pipeline.fit(data) # fit pipeline to a specific dataset 
+    return kmeans_pipeline['kmeans'].inertia_ # inertia = distance # ['kmeans'] refers to second step of pipeline
 
 # Calculate tot.withinss for different values of k
 k_values = range(1, 10)
@@ -120,10 +124,10 @@ Run K-means with the selected number of clusters and assign cluster labels.
 
 ```{python}
 # Choose the number of clusters based on the elbow method
-optimal_k = 3
+optimal_k = 3 # best number of segments to create 
 
 # Run K-means clustering
-
+# 3 segment pipeline 
 email_kmeans_pipeline = create_pipeline(optimal_k)
 email_kmeans_pipeline.fit(email_bases)
 
@@ -132,7 +136,7 @@ email_kmeans_pipeline.fit(email_bases)
 email_with_clusters = email.with_columns(
     pl.Series(
         "segment_number",
-        email_kmeans_pipeline['kmeans'].labels_ + 1
+        email_kmeans_pipeline['kmeans'].labels_ + 1 # prints a list where each number corresponds to a customer.. tells you whether the customer is in segment 1, 2, or 3 , +1 makes it so that it starts at segment 1 instead of segment 0
         ).cast(pl.Utf8).cast(pl.Categorical)  # Make cluster labels 1-indexed
 )
 
@@ -144,7 +148,7 @@ email_with_clusters.head()
 Analyze the segments based on mean values of key metrics and the number of observations in each segment.
 
 ```{python}
-# Calculate summary statistics for each segment
+# Calculate summary statistics for each segment, analyzes each segment. we want segments to be able to categorize and target each segment 
 segment_summary = email_with_clusters.group_by('segment_number').agg(
     [
         pl.mean('age').alias('mean_age'),
