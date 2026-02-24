@@ -1,0 +1,171 @@
+---
+title: "Customer Segmentation Analysis through K-Means Clustering"
+execute: 
+  echo: true
+  eval: true
+format:
+  html:
+    code-fold: false
+    self-contained: true
+jupyter: python3
+---
+
+## Introduction
+
+This document demonstrates customer segmentation analysis using K-Means Clustering. We will employ Python libraries Polars for data manipulation and Plotly Express for visualization. This analysis focuses on a dataset related to customer behavior and explores the appropriate number of clusters through the elbow method.
+
+## Setup
+
+Load the necessary libraries:
+
+```{python}
+import polars as pl
+import plotly.express as px
+from sklearn.pipeline import Pipeline
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+import numpy as np
+```
+
+## Section 1: Load Data as Polars Dataframe
+
+### 1.1 Data Manipulation with Polars
+
+Load and inspect the dataset using Polars.
+
+```{python}
+# Load data
+gaming = pl.read_csv("/workspaces/mktg_codespace/Gaming and Mental Health.csv")
+
+# View the first few rows of the data
+gaming.head()
+```
+
+## Section 2: Segmentation Analysis through K-Means Clustering
+
+### 2.1 Preparing the Data
+
+Select the base variables for clustering and scale the data.
+
+```{python}
+# Select relevant features for clustering
+gaming_bases = gaming.select([
+    'daily_gaming_hours',
+    'sleep_hours',
+    'social_isolation_score',
+    'weight_change_kg',
+    'exercise_hours_weekly',
+    'face_to_face_social_hours_weekly',])
+```
+
+
+### 2.2 Create K-Means Clustering Pipeline
+
+Use a sklearn pipeline to streamline the process of processing the data and conducting a k-means analysis.
+
+
+```{python}
+
+def create_pipeline(num_clusters, random_seed = 42):
+    """
+    Creates a machine learning pipeline with a scaler and KMeans.
+    """
+    pipeline = Pipeline([
+        ('scaler', StandardScaler()),
+        ('kmeans', KMeans(n_clusters=num_clusters, random_state=random_seed))
+    ])
+    return pipeline
+```
+
+
+### 2.2 Determining Optimal Clusters with the Elbow Method
+
+Define a function to calculate the total within-cluster sum of squares and plot the elbow graph.
+
+```{python}
+def calculate_totwithinss(data, k):
+    kmeans_pipeline = create_pipeline(k, random_seed=10)
+    kmeans_pipeline.fit(data)
+    return kmeans_pipeline['kmeans'].inertia_
+
+# Calculate tot.withinss for different values of k
+k_values = range(1, 10)
+totwithinss_values = [calculate_totwithinss(gaming_bases, k) for k in k_values]
+
+# Create a DataFrame for results
+kmeans_results = pl.DataFrame(
+    {'num_clusters': k_values,
+     'tot_withinss': totwithinss_values})
+
+# Plot the elbow method using Plotly Express
+elbow_plot = px.line(
+    data_frame = kmeans_results,
+    x = 'num_clusters',
+    y = 'tot_withinss', 
+    markers = True,
+    labels = {
+        'num_clusters': 'Number of Clusters', 'tot_withinss': 'Total Within SS'
+        },
+    title = 'Elbow Method for Optimal k')
+
+elbow_plot.show()
+```
+
+### 2.3 Final K-Means Clustering
+
+Run K-means with the selected number of clusters and assign cluster labels.
+
+```{python}
+# Choose the number of clusters based on the elbow method
+optimal_k = 4
+
+# Run K-means clustering
+
+gaming_kmeans_pipeline = create_pipeline(optimal_k)
+gaming_kmeans_pipeline.fit(gaming_bases)
+
+
+# Add cluster assignments to the original data
+gaming_with_clusters = gaming.with_columns(
+    pl.Series(
+        "segment_number",
+        gaming_kmeans_pipeline['kmeans'].labels_ + 1
+        ).cast(pl.Utf8).cast(pl.Categorical)  # Make cluster labels 1-indexed
+)
+
+gaming_with_clusters.head()
+```
+
+### 2.4 Segment Description
+
+Analyze the segments based on mean values of key metrics and the number of observations in each segment.
+
+```{python}
+# Calculate summary statistics for each segment
+segment_summary = gaming_with_clusters.group_by('segment_number').agg(
+    [
+        pl.mean('age').alias('mean_age'),
+        pl.mean('daily_gaming_hours').alias('mean_daily_gaming_hours'),
+        pl.mean('sleep_hours').alias('mean_sleep_hours'),
+        pl.mean('social_isolation_score').alias('mean_social_isolation_score'),
+        pl.mean('weight_change_kg').alias('mean_weight_change_kg'),
+        pl.mean('exercise_hours_weekly').alias('mean_exercise_hours_weekly'),
+        pl.mean('face_to_face_social_hours_weekly').alias('mean_face_to_face_social_hours_weekly'),
+        pl.len().alias('n')
+    ]
+)
+segment_summary
+```
+
+## Conclusion
+
+The customer segmentation analysis successfully identified four clusters, providing insights into customer behavior based on the selected variables. The analysis shows the mean characteristics of each segment, which can be used for targeted marketing strategies.
+
+The analysis identified 4 distinct segments of gamers:
+
+* **Segment 1:** Casual gamers (Avg ~2 hours) with high sleep hours, low social isolation scores and minimal weight change. (Mean age 20.5)
+* **Segment 2:** Heavy gamers (Avg ~11 hours) with low sleep hours, high avg social isolation scores and significant weight change. (Mean age 20.6)
+* **Segment 3:** heavy gamers (Avg ~8 hours) with low sleep hours, high avg social isolation scores and moderate weight change. (Mean age 20.9)
+* **Segment 4:** Moderate gamers (Avg ~5 hours) with moderate sleep hours, social isolation scores and weight change. (Mean age 20.1)
+
+**Implication:** We should target **Segment 2** for our mental health campaign as they show the highest correlation between gaming hours and social isolation. Also, their older average age suggest that they may be young professionals or university students facing burnout.

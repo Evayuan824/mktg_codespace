@@ -1,6 +1,6 @@
 ---
-title: "Sample Project"
-subtitle: "MKTG - LEE"
+title: "Gaming & Mental Health Project"
+subtitle: "MKTG3501 - Eva Yuan"
 execute: 
   echo: true
   eval: true
@@ -17,7 +17,7 @@ jupyter: python3
 # Introduction & Data Set Used
 
 - We study the automobile industry because ...
-- The data set we analyze comes from ..., and the files can be accessed through [Kaggle](https://kaggle.com)
+- The data set we analyze comes from ..., and the files can be accessed through [Kaggle](https://www.kaggle.com/datasets/shaistashahid/gaming-and-mental-health?resource=download)
 
 
 
@@ -30,12 +30,16 @@ jupyter: python3
 # load required packages
 import polars as pl
 import plotly.express as px
+from sklearn.pipeline import Pipeline
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+import numpy as np
 
 # Load data
-email = pl.read_csv("https://raw.githubusercontent.com/numktg/data/main/email.csv")
+gaming = pl.read_csv("/workspaces/mktg_codespace/Gaming and Mental Health.csv")
 
 # View the first few rows of the data
-email.head()
+gaming.head()
 
 ```
 
@@ -44,35 +48,130 @@ email.head()
 
 ```{python}
 
-px.histogram(email, x = 'avg_distance')
+px.histogram(gaming, x = 'daily_gaming_hours')
 
 
 ```
 
 
-From the histogram, it looks like the range of the avg_distance traveled is mostly between 200 and 800 mpg.
+From the histogram, it looks like the range of the daily_gaming_hours is mostly between 0 and 15 hours.
 
-- Second, we examine some summary statistics of the avg_distance variable:
+- Second, we examine some summary statistics of the daily_gaming_hours variable:
 
 ```{python}
 #| echo: false
 
 # This will only show the results but not the code, because 'echo' is set to false
-email.select(
-  pl.col("avg_distance").mean().alias("mean_avg_distance"),
-  pl.col("avg_distance").max().alias("max_avg_distance"),
-  pl.col("avg_distance").min().alias("min_avg_distance"),
+gaming.select(
+  pl.col("daily_gaming_hours").mean().alias("mean_daily_gaming_hours"),
+  pl.col("daily_gaming_hours").max().alias("max_daily_gaming_hours"),
+  pl.col("daily_gaming_hours").min().alias("min_daily_gaming_hours"),
 )
 
 ```
 # Model-Based Analysis
 
-We use XXX model to investigate the data set.
+# Select relevant features for clustering
+```{python}
+# Select relevant features for clustering
+gaming_bases = gaming.select([
+    'daily_gaming_hours',
+    'sleep_hours',
+    'social_isolation_score',
+    'weight_change_kg',
+    'exercise_hours_weekly',
+    'face_to_face_social_hours_weekly',])
+```
 
+```{python}
+
+def create_pipeline(num_clusters, random_seed = 42):
+    """
+    Creates a machine learning pipeline with a scaler and KMeans.
+    """
+    pipeline = Pipeline([
+        ('scaler', StandardScaler()),
+        ('kmeans', KMeans(n_clusters=num_clusters, random_state=random_seed))
+    ])
+    return pipeline
+```
+
+```{python}
+def calculate_totwithinss(data, k):
+    kmeans_pipeline = create_pipeline(k, random_seed=10)
+    kmeans_pipeline.fit(data)
+    return kmeans_pipeline['kmeans'].inertia_
+
+# Calculate tot.withinss for different values of k
+k_values = range(1, 10)
+totwithinss_values = [calculate_totwithinss(gaming_bases, k) for k in k_values]
+
+# Create a DataFrame for results
+kmeans_results = pl.DataFrame(
+    {'num_clusters': k_values,
+     'tot_withinss': totwithinss_values})
+
+# Plot the elbow method using Plotly Express
+elbow_plot = px.line(
+    data_frame = kmeans_results,
+    x = 'num_clusters',
+    y = 'tot_withinss', 
+    markers = True,
+    labels = {
+        'num_clusters': 'Number of Clusters', 'tot_withinss': 'Total Within SS'
+        },
+    title = 'Elbow Method for Optimal k')
+
+elbow_plot.show()
+```
+
+```{python}
+# Choose the number of clusters based on the elbow method
+optimal_k = 4
+
+# Run K-means clustering
+
+gaming_kmeans_pipeline = create_pipeline(optimal_k)
+gaming_kmeans_pipeline.fit(gaming_bases)
+
+
+# Add cluster assignments to the original data
+gaming_with_clusters = gaming.with_columns(
+    pl.Series(
+        "segment_number",
+        gaming_kmeans_pipeline['kmeans'].labels_ + 1
+        ).cast(pl.Utf8).cast(pl.Categorical)  # Make cluster labels 1-indexed
+)
+
+gaming_with_clusters.head()
+```
+
+```{python}
+# Calculate summary statistics for each segment
+segment_summary = gaming_with_clusters.group_by('segment_number').agg(
+    [
+        pl.mean('age').alias('mean_age'),
+        pl.mean('daily_gaming_hours').alias('mean_daily_gaming_hours'),
+        pl.mean('sleep_hours').alias('mean_sleep_hours'),
+        pl.mean('social_isolation_score').alias('mean_social_isolation_score'),
+        pl.mean('weight_change_kg').alias('mean_weight_change_kg'),
+        pl.mean('exercise_hours_weekly').alias('mean_exercise_hours_weekly'),
+        pl.mean('face_to_face_social_hours_weekly').alias('mean_face_to_face_social_hours_weekly'),
+        pl.len().alias('n')
+    ]
+)
+segment_summary
+```
 
 ## Customer Segmentation
-# in charge of this for assignment 6
+Segment 1: Casual Healthy Gamers (Avg ~2.3 hours) with high sleep hours, very low social isolation scores, strong exercise and face-to-face time, and minimal weight change. (Mean age ~20.6)
+Segment 2: Heavy Isolated Gamers (Avg ~10.9 hours) with very low sleep, the highest social isolation, low face-to-face time, lower exercise, and the greatest weight change. (Mean age ~20.9)
+Segment 3: High Engagement Gamers (Avg ~8.0 hours) with low sleep, moderately high isolation, moderate exercise and social time, and modest weight change. (Mean age ~20.1)
+Segment 4: Balanced Moderate Gamers (Avg ~5.2 hours) with moderate sleep, low isolation, good exercise and social interaction, and relatively small weight change. (Mean age ~20.5)
 
+We should prioritize Segment 2 because they display the strongest signs of problematic gaming behavior: averaging nearly 11 hours of daily play, the lowest sleep levels, the highest social isolation, reduced face-to-face interaction, and the greatest weight change—indicating the highest risk of negative mental and physical health outcomes and the greatest potential impact from intervention. 
+
+More broadly, the overall sample skews heavily toward 20–21 year olds across all segments, suggesting this life stage (early college years) is a critical window when gaming habits and lifestyle patterns are still forming, making targeted messaging to this age group both timely and likely to influence long-term behavior.
 
 ## Targeting
 
