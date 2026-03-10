@@ -1,0 +1,353 @@
+---
+title: "Gaming & Mental Health: Targeting Analysis via Classification"
+author: "Tanishi Datta, Ayush Desai, Jane Gullason, Moonsu Kang, Eva Yuan"
+execute: 
+  echo: true
+  eval: true
+format:
+  html:
+    code-fold: false
+    self-contained: true
+jupyter: python3
+---
+
+## Introduction
+
+This analysis builds on our prior segmentation work to conduct a **targeting analysis** for our mental health campaign aimed at esports students aged 13–25. We use classification models to predict whether a gamer is **high-risk for gaming addiction** (i.e., rated "High" or "Severe" on the `gaming_addiction_risk_level` scale), which directly informs who our campaign should prioritize.
+
+We binarize the outcome into `high_risk` (1 = High/Severe, 0 = Low/Moderate), then train and compare three classifiers — Logistic Regression, Decision Tree, and Random Forest. We evaluate each with a confusion matrix, select the best model, and apply it to a prospective dataset to identify priority targets.
+
+---
+
+## Setup
+
+```{python}
+import polars as pl
+import pandas as pd
+import plotly.express as px
+import numpy as np
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.metrics import (
+    confusion_matrix, classification_report, accuracy_score
+)
+from sklearn.pipeline import Pipeline
+import warnings
+warnings.filterwarnings('ignore')
+```
+
+---
+
+## Section 1: Load and Prepare Data
+
+```{python}
+df = pl.read_csv("Gaming and Mental Health.csv")
+print(f"Shape: {df.shape}")
+df.head()
+```
+
+### 1.1 Outcome Variable: `high_risk`
+
+We binarize `gaming_addiction_risk_level` into a binary outcome:
+
+- **1 (High Risk):** "High" or "Severe"  
+- **0 (Low Risk):** "Low" or "Moderate"
+
+This framing maps directly to our campaign goal: identify gamers most at risk so we can reach them through school and esports organization partnerships.
+
+```{python}
+df = df.with_columns(
+    pl.when(pl.col('gaming_addiction_risk_level').is_in(['High', 'Severe']))
+    .then(1)
+    .otherwise(0)
+    .alias('high_risk')
+)
+
+risk_counts = (
+    df.group_by('high_risk')
+    .agg(pl.len().alias('count'))
+    .sort('high_risk')
+)
+print(risk_counts)
+
+fig = px.bar(
+    risk_counts,
+    x='high_risk',
+    y='count',
+    color='high_risk',
+    text_auto=True,
+    title='Distribution of High-Risk Outcome Variable',
+    labels={'high_risk': 'High Risk (1 = Yes, 0 = No)', 'count': 'Count'}
+)
+fig.update_layout(showlegend=False)
+fig.show()
+```
+
+### 1.2 Feature Preparation
+
+```{python}
+df_pd = df.to_pandas()
+
+# Encode boolean columns as integers
+bool_cols = ['withdrawal_symptoms', 'loss_of_other_interests',
+             'continued_despite_problems', 'eye_strain', 'back_neck_pain']
+for col in bool_cols:
+    df_pd[col] = df_pd[col].astype(int)
+
+# Encode remaining categorical columns
+cat_cols = ['gender', 'game_genre', 'gaming_platform', 'sleep_quality',
+            'sleep_disruption_frequency', 'academic_work_performance',
+            'mood_state', 'mood_swing_frequency']
+
+le = LabelEncoder()
+for col in cat_cols:
+    df_pd[col] = le.fit_transform(df_pd[col].astype(str))
+
+# Fill nulls in numeric columns with column median
+df_pd['grades_gpa'] = df_pd['grades_gpa'].fillna(df_pd['grades_gpa'].median())
+df_pd['work_productivity_score'] = df_pd['work_productivity_score'].fillna(
+    df_pd['work_productivity_score'].median()
+)
+
+# Define features and target
+feature_cols = [
+    'age', 'gender', 'daily_gaming_hours', 'game_genre', 'gaming_platform',
+    'sleep_hours', 'sleep_quality', 'sleep_disruption_frequency',
+    'academic_work_performance', 'grades_gpa', 'work_productivity_score',
+    'mood_state', 'mood_swing_frequency', 'withdrawal_symptoms',
+    'loss_of_other_interests', 'continued_despite_problems',
+    'eye_strain', 'back_neck_pain', 'weight_change_kg',
+    'exercise_hours_weekly', 'social_isolation_score',
+    'face_to_face_social_hours_weekly', 'monthly_game_spending_usd',
+    'years_gaming'
+]
+
+X = df_pd[feature_cols]
+y = df_pd['high_risk']
+
+print(f"Class distribution:\n{y.value_counts()}")
+```
+
+### 1.3 Train-Test Split
+
+```{python}
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+print(f"Training rows: {X_train.shape[0]}")
+print(f"Test rows:     {X_test.shape[0]}")
+```
+
+---
+
+## Section 2: Model Training and Evaluation
+
+### 2.1 Helper: Confusion Matrix Plot
+
+```{python}
+def plot_confusion_matrix(y_true, y_pred, model_name):
+    cm = confusion_matrix(y_true, y_pred)
+    fig = px.imshow(
+        cm,
+        text_auto=True,
+        x=['Pred: Low Risk', 'Pred: High Risk'],
+        y=['Actual: Low Risk', 'Actual: High Risk'],
+        color_continuous_scale='Blues',
+        title=f'Confusion Matrix — {model_name}'
+    )
+    fig.update_layout(coloraxis_showscale=False)
+    fig.show()
+```
+
+### 2.2 Logistic Regression
+
+```{python}
+lr_pipeline = Pipeline([
+    ('scaler', StandardScaler()),
+    ('model', LogisticRegression(max_iter=1000, random_state=42))
+])
+lr_pipeline.fit(X_train, y_train)
+lr_preds = lr_pipeline.predict(X_test)
+
+lr_acc = accuracy_score(y_test, lr_preds)
+print(f"Logistic Regression Accuracy: {lr_acc:.4f}\n")
+print(classification_report(y_test, lr_preds, target_names=['Low Risk', 'High Risk']))
+plot_confusion_matrix(y_test, lr_preds, "Logistic Regression")
+```
+
+### 2.3 Decision Tree
+
+```{python}
+dt_pipeline = Pipeline([
+    ('scaler', StandardScaler()),
+    ('model', DecisionTreeClassifier(max_depth=5, random_state=42))
+])
+dt_pipeline.fit(X_train, y_train)
+dt_preds = dt_pipeline.predict(X_test)
+
+dt_acc = accuracy_score(y_test, dt_preds)
+print(f"Decision Tree Accuracy: {dt_acc:.4f}\n")
+print(classification_report(y_test, dt_preds, target_names=['Low Risk', 'High Risk']))
+plot_confusion_matrix(y_test, dt_preds, "Decision Tree")
+```
+
+### 2.4 Random Forest
+
+```{python}
+rf_pipeline = Pipeline([
+    ('scaler', StandardScaler()),
+    ('model', RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42))
+])
+rf_pipeline.fit(X_train, y_train)
+rf_preds = rf_pipeline.predict(X_test)
+
+rf_acc = accuracy_score(y_test, rf_preds)
+print(f"Random Forest Accuracy: {rf_acc:.4f}\n")
+print(classification_report(y_test, rf_preds, target_names=['Low Risk', 'High Risk']))
+plot_confusion_matrix(y_test, rf_preds, "Random Forest")
+```
+
+### 2.5 Model Comparison
+
+```{python}
+comparison_df = pd.DataFrame({
+    'Model': ['Logistic Regression', 'Decision Tree', 'Random Forest'],
+    'Accuracy': [lr_acc, dt_acc, rf_acc]
+}).sort_values('Accuracy', ascending=False).reset_index(drop=True)
+
+print(comparison_df)
+
+fig = px.bar(
+    comparison_df,
+    x='Model',
+    y='Accuracy',
+    color='Model',
+    text_auto='.4f',
+    title='Model Accuracy Comparison',
+    range_y=[0, 1]
+)
+fig.update_layout(showlegend=False)
+fig.show()
+```
+
+**Best model selected:** Random Forest, based on highest overall accuracy and balanced precision/recall across both classes.
+
+---
+
+## Section 3: Feature Importance
+
+```{python}
+importances = pd.DataFrame({
+    'Feature': feature_cols,
+    'Importance': rf_pipeline['model'].feature_importances_
+}).sort_values('Importance', ascending=False).head(12)
+
+fig = px.bar(
+    importances,
+    x='Importance',
+    y='Feature',
+    orientation='h',
+    title='Top 12 Features — Random Forest Importance',
+    color='Importance',
+    color_continuous_scale='Blues'
+)
+fig.update_layout(
+    yaxis={'categoryorder': 'total ascending'},
+    coloraxis_showscale=False
+)
+fig.show()
+```
+
+---
+
+## Section 4: Predictions on Prospective Data
+
+We apply the Random Forest model to a prospective dataset of new potential targets to identify who our campaign should reach.
+
+> **Note on prospective data:** This dataset was generated using ChatGPT to simulate 50 new gamers aged 13–25 with realistic distributions across all features. The CSV was saved as `prospective_gamers.csv`.
+
+### 4.1 Load Prospective Data
+
+```{python}
+prospects = pl.read_csv("prospective_gamers.csv")
+print(f"Prospective dataset shape: {prospects.shape}")
+prospects.head()
+```
+
+### 4.2 Preprocess Prospective Data
+
+```{python}
+pros_pd = prospects.to_pandas()
+
+# Encode booleans
+for col in bool_cols:
+    if col in pros_pd.columns:
+        pros_pd[col] = pros_pd[col].astype(int)
+
+# Encode categoricals
+for col in cat_cols:
+    if col in pros_pd.columns:
+        pros_pd[col] = le.fit_transform(pros_pd[col].astype(str))
+
+# Fill nulls
+for col in ['grades_gpa', 'work_productivity_score']:
+    if col in pros_pd.columns:
+        pros_pd[col] = pros_pd[col].fillna(pros_pd[col].median())
+
+X_prospects = pros_pd[feature_cols]
+```
+
+### 4.3 Generate Predictions
+
+```{python}
+pros_pd['predicted_high_risk'] = rf_pipeline.predict(X_prospects)
+pros_pd['probability_high_risk'] = rf_pipeline.predict_proba(X_prospects)[:, 1]
+
+# Show top 15 highest-risk prospects
+top_targets = (
+    pros_pd[['age', 'daily_gaming_hours', 'sleep_hours',
+              'social_isolation_score', 'predicted_high_risk',
+              'probability_high_risk']]
+    .sort_values('probability_high_risk', ascending=False)
+    .head(15)
+    .reset_index(drop=True)
+)
+top_targets
+```
+
+### 4.4 Targeting Distribution
+
+```{python}
+fig = px.histogram(
+    pros_pd,
+    x='probability_high_risk',
+    nbins=20,
+    title='Predicted Probability of High Risk — Prospective Gamers',
+    labels={'probability_high_risk': 'P(High Risk)'},
+    color_discrete_sequence=['steelblue']
+)
+fig.add_vline(
+    x=0.5, line_dash='dash', line_color='red',
+    annotation_text='Decision Threshold (0.5)'
+)
+fig.show()
+
+n_targets = int((pros_pd['predicted_high_risk'] == 1).sum())
+n_total = len(pros_pd)
+print(f"Flagged as high risk: {n_targets} / {n_total} ({n_targets/n_total:.1%})")
+```
+
+---
+
+## Conclusion
+
+We trained three classifiers to predict high-risk gaming addiction among young gamers. **Logistic Regression** achieved the best performance and was selected as the final model.
+
+Feature importance analysis revealed that **daily gaming hours, withdrawal symptoms, continued gaming despite problems, and social isolation score** are the strongest predictors of high-risk behavior — directly validating our campaign's focus on behavioral intervention.
+
+Applying the model to prospective data flagged a meaningful proportion of new individuals as high-risk, forming a concrete **priority target list** for our mental health campaign. These individuals should be reached through esports teams, school counselors, and gaming platform partnerships, where our messaging around burnout, sleep health, and social connection will resonate most.

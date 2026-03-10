@@ -1,0 +1,51 @@
+age,gender,daily_gaming_hours,game_genre,gaming_platform,sleep_hours,sleep_quality,sleep_disruption_frequency,academic_work_performance,grades_gpa,work_productivity_score,mood_state,mood_swing_frequency,withdrawal_symptoms,loss_of_other_interests,continued_despite_problems,eye_strain,back_neck_pain,weight_change_kg,exercise_hours_weekly,social_isolation_score,face_to_face_social_hours_weekly,monthly_game_spending_usd,years_gaming
+22,Female,4.1,Mobile Games,Console,4.0,Poor,Often,Above Average,2.49,94.5,Withdrawn,Never,False,False,False,False,False,8.2,7.0,4,10.0,441.56,13
+24,Male,7.8,MOBA,PC,3.9,Excellent,Rarely,Average,1.8,59.9,Normal,Often,False,False,False,False,False,-2.8,9.4,9,14.2,364.47,2
+21,Female,8.2,RPG,Multiple,7.4,Fair,Always,Above Average,3.24,23.2,Irritable,Always,False,False,True,True,False,8.0,6.9,2,8.1,461.82,11
+22,Male,8.1,MOBA,Console,7.7,Good,Sometimes,Above Average,3.95,42.9,Restless,Rarely,False,True,False,False,True,-2.6,8.2,9,2.3,320.27,2
+21,Female,8.7,Battle Royale,Mobile,5.5,Fair,Rarely,Below Average,2.23,43.2,Anxious,Sometimes,False,True,False,False,False,-0.9,7.8,2,4.8,303.84,14
+24,Female,1.4,Battle Royale,Mobile,6.3,Very Poor,Always,Average,3.37,30.0,Angry,Sometimes,True,False,False,False,True,7.1,0.0,5,0.5,333.65,6
+20,Male,14.0,Battle Royale,Multiple,5.8,Excellent,Rarely,Average,2.91,95.4,Anxious,Rarely,True,True,False,True,True,4.2,9.8,9,4.2,210.73,9
+20,Male,6.5,Battle Royale,Mobile,5.5,Fair,Often,Excellent,1.88,35.9,Withdrawn,Always,False,False,False,True,False,3.1,8.2,8,9.9,54.43,4
+20,Non-binary,3.1,FPS,Multiple,8.0,Poor,Rarely,Excellent,3.61,62.6,Angry,Often,False,False,True,True,True,7.0,3.2,1,12.3,378.07,14
+20,Male,3.9,Sports,Mobile,5.4,Very Poor,Never,Below Average,2.06,24.1,Depressed,Rarely,True,True,False,False,False,-0.9,8.0,5,7.6,155.57,13
+21,Female,10.4,Sports,Mobile,7.1,Poor,Sometimes,Above Average,2.21,73.7,Withdrawn,Sometimes,True,False,True,False,False,8.9,2.9,6,7.8,378.74,10
+25,Female,5.3,FPS,PC,3.4,Good,Sometimes,Above Average,2.58,95.0,Normal,Often,False,True,True,True,False,-0.9,1.4,1,4.5,385.89,10
+25,Male,8.3,Battle Royale,Console,3.7,Fair,Sometimes,Excellent,2.84,62.5,Withdrawn,Often,True,False,True,True,True,-1.4,2.2,6,12.0,265.18,12
+13,Male,13.4,Battle Royale,PC,4.4,Fair,Rarely,Below Average,3.6,71.3,Withdrawn,Never,True,False,False,False,True,0.7,0.8,3,3.4,8.08,10
+17,Non-binary,7.0,MOBA,Mobile,6.6,Good,Rarely,Average,2.62,87.5,Irritable,Never,True,False,True,True,False,6.2,4.7,9,10.2,465.44,9
+15,Male,8.3,MOBA,Mobile,5.5,Good,Rarely,Below Average,2.69,77.9,Irritable,Always,True,True,False,False,False,1.2,6.6,2,11.7,281.46,7
+13,Non-binary,5.0,Sports,PC,7.3,Very Poor,Never,Average,1.78,36.0,Restless,Sometimes,False,False,True,True,False,6.0,5.3,7,11.6,433.75,13
+24,Male,10.5,Sports,Mobile,4.4,Very Poor,Often,Excellent,3.78,23.2,Restless,Always,True,False,False,True,False,8.3,5.2,7,6.3,185.78,12
+19,Male,10.4,FPS,Console,8.8,Poor,Sometimes,Average,2.28,98.3,Normal,Often,True,True,True,True,False,9.9,3.6,4,13.4,436.08,13
+22,Female,6.1,MOBA,Multiple,6.6,Good,Always,Above Average,2.55,64.8,Irritable,Rarely,True,False,False,False,False,7.9,5.2,8,8.7,493.06,8
+20,Male,5.9,MOBA,Console,8.4,Very Poor,Often,Above Average,3.43,82.2,Depressed,Often,False,False,False,False,False,7.8,3.8,5,6.7,206.4,14
+14,Female,9.8,Battle Royale,Mobile,3.8,Very Poor,Rarely,Above Average,2.28,53.8,Withdrawn,Rarely,True,False,False,False,False,1.3,4.5,4,6.1,257.42,12
+24,Male,9.8,RPG,Mobile,4.5,Poor,Always,Below Average,2.01,50.7,Irritable,Sometimes,False,False,True,True,False,-0.8,3.6,5,13.8,173.95,6
+24,Female,12.0,MOBA,Multiple,5.9,Poor,Sometimes,Below Average,2.88,34.8,Irritable,Always,True,False,True,False,False,8.0,9.5,5,14.5,158.22,14
+15,Female,13.6,Battle Royale,Mobile,6.5,Fair,Never,Excellent,2.88,88.5,Withdrawn,Often,False,False,False,False,True,9.7,8.4,8,10.2,414.33,6
+25,Male,4.9,Mobile Games,Multiple,7.0,Poor,Rarely,Average,1.77,86.3,Depressed,Often,True,False,True,True,False,-0.8,1.9,3,10.4,67.32,1
+21,Female,5.4,MOBA,Multiple,3.1,Fair,Often,Below Average,3.66,28.5,Normal,Sometimes,True,False,True,False,True,9.0,5.4,8,1.3,127.41,8
+14,Male,5.7,Sports,Multiple,7.9,Excellent,Rarely,Above Average,1.72,57.9,Angry,Sometimes,True,True,False,False,True,4.6,9.4,5,12.2,150.03,9
+15,Male,8.5,Battle Royale,Mobile,7.5,Excellent,Sometimes,Above Average,3.83,70.0,Restless,Never,False,True,False,False,False,3.0,5.8,4,6.1,334.78,14
+19,Male,4.7,MOBA,Console,8.9,Very Poor,Sometimes,Average,3.86,93.8,Irritable,Sometimes,True,False,True,False,False,2.3,2.6,5,8.6,79.87,12
+14,Male,8.7,FPS,Mobile,4.5,Fair,Always,Below Average,3.78,46.2,Irritable,Always,False,False,True,True,False,9.8,6.4,7,4.5,322.41,5
+15,Male,7.9,Battle Royale,Mobile,7.1,Fair,Sometimes,Average,3.64,62.8,Irritable,Often,True,False,False,True,False,-0.4,2.7,5,9.5,315.77,8
+21,Male,3.5,Battle Royale,Mobile,7.1,Fair,Often,Average,3.37,52.6,Angry,Rarely,True,False,False,True,True,-3.9,8.3,5,8.2,326.48,8
+17,Male,11.1,Mobile Games,Mobile,6.0,Poor,Rarely,Above Average,3.5,36.4,Withdrawn,Never,False,True,False,False,False,4.1,8.1,3,14.7,148.08,9
+14,Male,11.0,Mobile Games,Console,3.8,Poor,Never,Average,2.29,55.8,Normal,Often,True,False,False,False,False,4.7,6.5,3,1.6,27.46,5
+24,Male,2.2,Mobile Games,Multiple,4.6,Fair,Never,Average,1.76,25.3,Normal,Always,False,False,True,True,True,3.1,7.8,7,12.3,248.97,11
+24,Female,8.7,RPG,Mobile,9.0,Fair,Often,Excellent,2.46,90.6,Anxious,Always,False,True,True,True,True,6.2,1.6,8,3.5,272.44,12
+20,Female,9.3,MOBA,Mobile,8.7,Very Poor,Rarely,Excellent,1.84,85.7,Anxious,Often,True,False,False,True,True,-4.3,2.4,3,6.0,47.24,14
+23,Male,2.3,Sports,Mobile,7.5,Very Poor,Often,Below Average,3.53,50.9,Angry,Always,True,False,False,False,True,9.0,3.3,4,3.2,216.46,13
+20,Non-binary,3.8,Mobile Games,Multiple,7.1,Fair,Sometimes,Excellent,1.62,54.0,Irritable,Often,False,False,False,True,False,3.4,1.0,1,8.7,172.18,14
+16,Male,10.5,Mobile Games,Multiple,8.3,Excellent,Never,Above Average,3.99,60.6,Normal,Always,False,False,False,True,True,-4.3,8.2,6,6.4,159.12,1
+16,Male,4.0,MOBA,Multiple,4.6,Poor,Sometimes,Excellent,2.6,82.9,Restless,Always,True,True,True,True,False,9.9,6.2,7,12.7,20.33,13
+16,Male,3.5,Mobile Games,Multiple,3.9,Good,Rarely,Excellent,3.98,98.9,Anxious,Often,True,True,False,True,False,-4.5,0.0,4,4.4,387.32,5
+19,Female,2.3,FPS,Multiple,3.8,Poor,Often,Above Average,3.17,33.2,Irritable,Always,False,False,False,False,True,6.9,3.3,1,12.5,486.07,10
+23,Female,7.9,RPG,Mobile,5.9,Poor,Never,Excellent,3.88,90.0,Normal,Never,False,True,False,True,False,1.8,6.4,7,7.3,44.38,4
+24,Female,13.9,Mobile Games,PC,8.7,Poor,Often,Average,2.92,39.1,Restless,Often,False,False,False,True,True,-0.0,6.8,4,11.8,79.64,5
+22,Male,7.3,Mobile Games,Mobile,5.9,Good,Sometimes,Above Average,3.17,90.7,Depressed,Sometimes,False,False,False,True,False,3.6,7.1,5,8.5,261.58,6
+13,Non-binary,11.3,Sports,Multiple,7.8,Excellent,Often,Below Average,3.72,34.1,Depressed,Never,True,True,True,False,False,1.3,9.2,4,3.3,21.67,10
+25,Male,11.8,MOBA,PC,7.9,Excellent,Never,Average,2.16,64.4,Restless,Sometimes,False,False,False,False,False,-2.6,1.2,7,13.9,58.04,10
+17,Male,7.7,FPS,PC,4.9,Fair,Sometimes,Above Average,1.91,77.2,Irritable,Always,False,False,False,False,False,1.4,3.8,3,11.5,488.99,13
