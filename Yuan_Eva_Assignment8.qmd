@@ -175,14 +175,14 @@ label_encoder = LabelEncoder()
 customer_data_transformed_df['made_purchase'] = label_encoder.fit_transform(customer_data_transformed_df['made_purchase'])
 
 # Define features and target
-features = ['most_recent_transaction', 'log_number_of_transactions', 'log_total_revenue']
+features = ['most_recent_transaction (R)', 'log_number_of_transactions', 'log_total_revenue']
 target = 'made_purchase'
 
 
 
 # Define column transformer for one-hot encoding categorical features
 categorical_features = []
-numeric_features = ['most_recent_transaction', 'log_number_of_transactions', 'log_total_revenue']
+numeric_features = ['most_recent_transaction (R)', 'log_number_of_transactions', 'log_total_revenue']
 
 preprocessor = ColumnTransformer(
     transformers=[
@@ -306,10 +306,30 @@ Now, the 'customer_test' variable is a polars dataframe containing the test info
 # ROMI calculation
 num_customers_targeted = 100
 per_purchaser_profit = 12
-per_person_cost = 7.5
+per_person_cost = 8
 
-# Finish the rest
+# Top 100 customers with highest predicted probability
+top_customers = (
+    customer_test
+    .sort("pred_probability", descending=True)
+    .head(num_customers_targeted)
+)
 
+# How many of those customers actually made a purchase
+actual_purchasers = top_customers["made_purchase"].sum()
+
+# Calculate revenue and cost
+total_profit = actual_purchasers * per_purchaser_profit
+total_cost = num_customers_targeted * per_person_cost
+
+# ROMI formula
+romi = (total_profit - total_cost) / total_cost
+
+# Print results
+print("Actual purchasers in top 100:", actual_purchasers)
+print("Total profit from purchasers:", total_profit)
+print("Total campaign cost:", total_cost)
+print("ROMI:", romi)
 
 ```
 
