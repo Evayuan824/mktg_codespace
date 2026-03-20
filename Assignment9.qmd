@@ -1,0 +1,184 @@
+---
+title: "Continuous Prediction"
+execute: 
+  echo: true
+  eval: true
+format:
+  html:
+    code-fold: false
+    self-contained: true
+jupyter: python3
+---
+
+
+## Loading Libraries
+
+```{python}
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.svm import SVR
+from sklearn.model_selection import train_test_split
+import polars as pl
+import plotly.express as px
+import pandas as pd
+```
+
+
+## Introduction
+
+This document demonstrates how to do continuous predictions using functions from the sklearn library. We will also do a simple marketing mix modeling analysis.
+
+
+## Load and Prepare Data
+
+```{python}
+# Load the dataset
+data_url = "Gaming and Mental Health.csv"
+data = pl.read_csv(data_url)
+
+# Drop unused columns
+data = data.drop(["gender", "age"])
+
+# Drop rows where the target variable is null
+data = data.drop_nulls(subset=["work_productivity_score"])
+
+print(f"Rows after removing nulls in target: {len(data)}")
+data.head()
+```
+
+
+## Specify Feature and Target Columns
+
+```{python}
+target = "work_productivity_score"
+numeric_features = ["sleep_hours", "daily_gaming_hours", "grades_gpa"]
+
+# Drop rows where any feature column is null
+data = data.drop_nulls(subset=numeric_features)
+print(f"Rows after removing nulls in features: {len(data)}")
+
+# Preprocessor — only numeric features, no empty categorical list
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', StandardScaler(), numeric_features)
+    ]
+)
+
+# Split into train and test sets
+train, test = train_test_split(data.to_pandas(), test_size=0.5, random_state=11109)
+
+print(f"Train size: {len(train)}, Test size: {len(test)}")
+```
+
+
+## ML Pipelines
+
+```{python}
+lr_pipeline = Pipeline([
+    ('preprocessor', preprocessor),
+    ('model', LinearRegression())
+])
+
+rf_pipeline = Pipeline([
+    ('preprocessor', preprocessor),
+    ('model', RandomForestRegressor(n_estimators=50, random_state=11109))
+])
+
+svm_pipeline = Pipeline([
+    ('preprocessor', preprocessor),
+    ('model', SVR())
+])
+```
+
+
+## Train and Predict
+
+```{python}
+# Fit models and generate predictions
+lr_pipeline.fit(train[numeric_features], train[target])
+train["lr_prediction"] = lr_pipeline.predict(train[numeric_features])
+test["lr_prediction"] = lr_pipeline.predict(test[numeric_features])
+
+rf_pipeline.fit(train[numeric_features], train[target])
+train["rf_prediction"] = rf_pipeline.predict(train[numeric_features])
+test["rf_prediction"] = rf_pipeline.predict(test[numeric_features])
+
+svm_pipeline.fit(train[numeric_features], train[target])
+train["svm_prediction"] = svm_pipeline.predict(train[numeric_features])
+test["svm_prediction"] = svm_pipeline.predict(test[numeric_features])
+```
+
+
+## Compute Error and RMSE
+
+```{python}
+# Convert test to Polars for error computation
+test_pl = pl.DataFrame(test).with_columns([
+    (pl.col("lr_prediction")  - pl.col(target)).alias("lr_error"),
+    (pl.col("rf_prediction")  - pl.col(target)).alias("rf_error"),
+    (pl.col("svm_prediction") - pl.col(target)).alias("svm_error"),
+])
+
+# Compute RMSE for each model
+rmse = test_pl.select([
+    pl.col("lr_error").pow(2).mean().sqrt().alias("lr_rmse"),
+    pl.col("rf_error").pow(2).mean().sqrt().alias("rf_rmse"),
+    pl.col("svm_error").pow(2).mean().sqrt().alias("svm_rmse"),
+])
+print("RMSE for each method:")
+print(rmse)
+```
+
+
+## Visualize Predictions vs Actual Values
+
+```{python}
+# Convert back to pandas for Plotly (consistent behavior across versions)
+test_pd = test_pl.to_pandas()
+
+def predict_vs_actual_plot(df, prediction_col, mytitle):
+    fig = px.scatter(
+        df,
+        x=target,                  # FIX: was 'purchase_amount' (wrong column)
+        y=prediction_col,
+        title=mytitle,
+        labels={target: "Actual Work Productivity Score", prediction_col: "Predicted Value"},
+        trendline="ols"
+    )
+    fig.show()
+
+predict_vs_actual_plot(test_pd, "lr_prediction",  "Linear Regression: Predicted vs Actual")
+predict_vs_actual_plot(test_pd, "rf_prediction",  "Random Forest: Predicted vs Actual")
+predict_vs_actual_plot(test_pd, "svm_prediction", "SVM: Predicted vs Actual")
+```
+
+
+# Marketing Mix Modeling Example
+
+```{python}
+marketing_url = "https://drive.google.com/uc?export=download&id=15UaT_hXyPQ5y_jVzkIAiEik6f-IrV51l"
+marketing = pd.read_csv(marketing_url)
+
+feature_mmm = ["youtube", "facebook", "newspaper"]
+target_mmm  = "sales"
+
+marketing_lr_pipeline = Pipeline([
+    ("lr", LinearRegression())
+])
+
+marketing_lr_pipeline.fit(marketing[feature_mmm], marketing[target_mmm])
+
+coefficients = marketing_lr_pipeline.named_steps["lr"].coef_
+
+coef_df = pl.DataFrame({
+    "Feature":     feature_mmm,
+    "Coefficient": coefficients.tolist()
+})
+print("Marketing Mix Model Coefficients:")
+print(coef_df)
+```
+
+

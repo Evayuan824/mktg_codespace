@@ -1,0 +1,236 @@
+---
+title: "Continuous Prediction"
+execute: 
+  echo: true
+  eval: true
+format:
+  html:
+    code-fold: false
+    self-contained: true
+jupyter: python3
+---
+
+
+## Loading Libraries
+
+```{python}
+# Import necessary libraries
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.svm import SVR
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+import polars as pl
+import plotly.express as px
+import pandas as pd
+
+```
+
+
+## Introduction
+
+This document demonstrates how to do continuous predictions using functions from the sklearn library. We will also do a simple marketing mix modeling analysis.
+
+
+
+```{python}
+
+# Load the dataset
+data_url = "https://drive.google.com/uc?export=download&id=1a6aCUfO0Xw0QEdzT66T4W6VQYCSl_Kzs"
+data = pl.read_csv(data_url).drop("") # Removing unnecessary column
+
+
+```
+
+
+
+
+
+### Specify feature and target columns
+
+```{python}
+
+# Define features and target
+features = [col for col in data.columns if col not in ["id", "purchase_amount"]]
+target = "purchase_amount"
+
+# Define preprocessor
+categorical_features = []  # Specify if there are any categorical features
+numeric_features = features
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', StandardScaler(), numeric_features),  # Standard scale numeric features
+        ('cat', OneHotEncoder(), categorical_features)  # One-hot encode categorical features
+    ]
+)
+
+# Split the data into training and testing sets
+train, test = train_test_split(data, test_size=0.5, random_state=11109)
+
+train_df = train.to_pandas()
+test_df = test.to_pandas()
+
+```
+
+## ML Pipelines
+
+```{python}
+
+
+
+# Define models with pipelines
+lr_pipeline = Pipeline([
+    ('preprocessor', preprocessor),
+    ('model', LinearRegression())
+])
+
+rf_pipeline = Pipeline([
+    ('preprocessor', preprocessor),
+    ('model', RandomForestRegressor(n_estimators=50, random_state=11109))
+])
+
+svm_pipeline = Pipeline([
+    ('preprocessor', preprocessor),
+    ('model', SVR())
+])
+
+
+```
+
+
+## Train and Predict
+```{python}
+
+# Train and predict
+lr_pipeline.fit(train_df[features], train_df[target])
+train_df["lr_prediction"] = lr_pipeline.predict(train_df[features])
+test_df["lr_prediction"] = lr_pipeline.predict(test_df[features])
+
+rf_pipeline.fit(train_df[features], train_df[target])
+train_df["rf_prediction"] = rf_pipeline.predict(train_df[features])
+test_df["rf_prediction"] = rf_pipeline.predict(test_df[features])
+
+svm_pipeline.fit(train_df[features], train_df[target])
+train_df["svm_prediction"] = svm_pipeline.predict(train_df[features])
+test_df["svm_prediction"] = svm_pipeline.predict(test_df[features])
+
+
+
+```
+
+
+## Compute Error and RMSE
+```{python}
+
+# Add error columns directly to test dataframe
+test_df = pl.DataFrame(test_df).with_columns([
+    (pl.col("lr_prediction") - pl.col(target)).alias("lr_error"),
+    (pl.col("rf_prediction") - pl.col(target)).alias("rf_error"),
+    (pl.col("svm_prediction") - pl.col(target)).alias("svm_error"),
+])
+
+# Test computation
+test_df.select([
+    pl.col("lr_error"),
+    pl.col("lr_error").pow(2).alias("lr_squared"),
+    pl.col("lr_error").pow(2).mean().alias("lr_mean"),
+    pl.col("lr_error").pow(2).mean().sqrt().alias("lr_rmse"),
+    
+])
+
+
+# Compute RMSE for each method
+rmse = test_df.select([
+    pl.col("lr_error").pow(2).mean().sqrt().alias("lr_rmse"),
+    pl.col("rf_error").pow(2).mean().sqrt().alias("rf_rmse"),
+    pl.col("svm_error").pow(2).mean().sqrt().alias("svm_rmse"),
+])
+print("RMSE for each method:")
+print(rmse)
+
+
+```
+
+
+
+## Visualize Predictions vs Actual Values
+```{python}
+
+# Scatter plot for predictions vs actual values
+def predict_vs_actual_plot(df, prediction_col, mytitle):
+    fig = px.scatter(
+        df,
+        x = 'purchase_amount',
+        y = prediction_col,
+        title = mytitle,
+        labels = {"x": "Actual Purchase Amount", "y": "Predicted Value"}
+    )
+    fig.show()
+
+predict_vs_actual_plot(test_df, "lr_prediction", "Linear Regression: Predicted vs Actual")
+predict_vs_actual_plot(test_df, "rf_prediction", "Random Forest: Predicted vs Actual")
+predict_vs_actual_plot(test_df, "svm_prediction", "SVM: Predicted vs Actual")
+
+
+
+```
+
+
+# Marketing Mix Modeling Example
+
+```{python}
+
+# Marketing Mix Model Example
+marketing_url = "https://drive.google.com/uc?export=download&id=15UaT_hXyPQ5y_jVzkIAiEik6f-IrV51l"
+marketing = pd.read_csv(marketing_url)
+
+
+feature_mmm = ["youtube", "facebook", "newspaper"]
+target_mmm = 'sales'
+
+# Linear Regression for Marketing Data
+#X_marketing = marketing.select(["youtube", "facebook", "newspaper"])
+#y_marketing = marketing["sales"]
+
+marketing_lr_pipeline = Pipeline([
+    ("lr", LinearRegression())
+])
+
+marketing_lr_pipeline.fit(marketing[feature_mmm], marketing[target_mmm])
+
+# Display model coefficients
+coefficients = marketing_lr_pipeline.named_steps["lr"].coef_
+
+coef_df = pl.DataFrame({
+    "Feature": ["youtube", "facebook", "newspaper"],
+    "Coefficient": coefficients
+})
+print("Marketing Mix Model Coefficients:")
+print(coef_df)
+
+
+
+
+```
+
+
+# Correlation Does Not Equal Causation
+Keep in mind that when running a regression analysis, we are studying the correlation between the predictor variables and the outcome variable. We are **NOT** studying if changes in predictor variables **cause** the outcome variable to increase/decrease. We are simply saying that a unit increase in the predictor variable is **correlated** with an increase/decrease in the outcome variable.
+
+For example, we can use the number of people carrying an umbrella to predict how much rain we'll get today. It is also likely that the number of people carrying an umbrella will be positively correlated with the amount of rain we are going to get. In this case, we conclude that the number of people carrying an umbrella is **correlated** with the precipitation; however, we do NOT mean that the mere fact that more people carry umbrellas *causes* it to rain more.
+
+
+### Key Points in the Document
+
+
+1. **Data Loading and Preparation**: Loads the datasets using Polars and selects relevant columns for analysis.
+
+2. **Continuous Prediction**: Performs continuous prediction using linear regression, random forest, and support vector regression. 
+
+3. **Marketing Mix Modeling**: Perform linear regression to understand relative effectiveness of different marketing channels.
+
+4. **Correlation != Causation**: Correlation doesn't automatically imply causation.
