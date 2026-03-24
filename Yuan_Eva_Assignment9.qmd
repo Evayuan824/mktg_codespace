@@ -1,0 +1,210 @@
+---
+title: "Assignment 9"
+execute: 
+  echo: true
+  eval: true
+format:
+  html:
+    code-fold: false
+    self-contained: true
+jupyter: python3
+---
+
+
+## Loading Libraries
+
+```{python}
+# Import necessary libraries
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.svm import SVR
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+import polars as pl
+import plotly.express as px
+import pandas as pd
+
+```
+
+
+## Introduction
+For this assignment, we use our group project dataset to predict a continuous outcome variable. Our target variable is face_to_face_social_hours_weekly, which measures the number of hours spent socializing face-to-face each week. This prediction task helps us better understand which behavioral and lifestyle factors are most associated with in-person social interaction.
+
+
+```{python}
+
+# Load the dataset
+data = pl.read_csv("Gaming and Mental Health.csv")
+print(f"Shape: {data.shape}")
+data.head()
+```
+
+
+
+### Specify feature and target columns
+
+```{python}
+
+# Define numeric and categorical features
+numeric_features = [
+    'age',
+    'daily_gaming_hours',
+    'sleep_hours',
+    'weight_change_kg',
+    'exercise_hours_weekly',
+    'social_isolation_score',
+    'monthly_game_spending_usd',
+    'years_gaming'
+]
+
+categorical_features = [
+    'sleep_disruption_frequency',
+    'mood_state',
+    'mood_swing_frequency',
+    'gaming_addiction_risk_level'
+]
+
+# Define target
+target = "face_to_face_social_hours_weekly"
+
+# Combine all features
+all_features = numeric_features + categorical_features
+
+# Drop rows with missing values in features or target
+data = data.drop_nulls(subset=all_features + [target])
+
+# Preprocessing
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', StandardScaler(), numeric_features),
+        ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_features)
+    ]
+)
+
+# Split the data into training and testing sets
+train, test = train_test_split(data, test_size=0.5, random_state=11109)
+
+# Convert to pandas for sklearn compatibility
+train_df = train.to_pandas()
+test_df = test.to_pandas()
+
+```
+
+## ML Pipelines
+
+```{python}
+
+# Define models with pipelines
+
+# Linear Regression pipeline
+lr_pipeline = Pipeline([
+    ('preprocessor', preprocessor),
+    ('model', LinearRegression())
+])
+
+# Random Forest pipeline
+rf_pipeline = Pipeline([
+    ('preprocessor', preprocessor),
+    ('model', RandomForestRegressor(n_estimators=50, random_state=11109))
+])
+
+# Support Vector Regressor pipeline
+svm_pipeline = Pipeline([
+    ('preprocessor', preprocessor),
+    ('model', SVR())
+])
+
+
+```
+
+
+## Train and Predict
+```{python}
+
+# Train Linear Regression
+lr_pipeline.fit(train_df[all_features], train_df[target])
+test_df["lr_prediction"] = lr_pipeline.predict(test_df[all_features])
+
+# Train Random Forest
+rf_pipeline.fit(train_df[all_features], train_df[target])
+test_df["rf_prediction"] = rf_pipeline.predict(test_df[all_features])
+
+# Train SVM
+svm_pipeline.fit(train_df[all_features], train_df[target])
+test_df["svm_prediction"] = svm_pipeline.predict(test_df[all_features])
+
+```
+
+
+## Compute Error and RMSE
+```{python}
+
+# Convert back to Polars for easier RMSE calculation
+test_df = pl.DataFrame(test_df).with_columns([
+    (pl.col("lr_prediction") - pl.col(target)).alias("lr_error"),
+    (pl.col("rf_prediction") - pl.col(target)).alias("rf_error"),
+    (pl.col("svm_prediction") - pl.col(target)).alias("svm_error"),
+])
+
+# Compute RMSE for each model
+rmse_df = test_df.select([
+    pl.col("lr_error").pow(2).mean().sqrt().alias("lr_rmse"),
+    pl.col("rf_error").pow(2).mean().sqrt().alias("rf_rmse"),
+    pl.col("svm_error").pow(2).mean().sqrt().alias("svm_rmse"),
+])
+
+print("RMSE for each model:")
+print(rmse_df)
+
+
+```
+
+
+## Selecting best model
+```{python}
+
+# Convert RMSE results to dictionary
+rmse_dict = rmse_df.to_dicts()[0]
+
+# Identify model with the lowest RMSE
+best_model = min(rmse_dict, key=rmse_dict.get)
+best_rmse = rmse_dict[best_model]
+
+print(f"Best model based on lowest RMSE: {best_model}")
+print(f"Best RMSE: {best_rmse}")
+
+```
+
+## Visualize Predictions vs Actual Values
+```{python}
+
+# Scatter plot for predictions vs actual values
+# Convert back to pandas for plotting
+plot_df = test_df.to_pandas()
+
+def predict_vs_actual_plot(df, prediction_col, mytitle):
+    fig = px.scatter(
+        df,
+        x=target,
+        y=prediction_col,
+        title=mytitle,
+        labels={
+            target: "Actual Face-to-Face Social Hours Weekly",
+            prediction_col: "Predicted Values"
+        }
+    )
+    fig.show()
+
+predict_vs_actual_plot(plot_df, "lr_prediction", "Linear Regression: Predicted vs Actual")
+predict_vs_actual_plot(plot_df, "rf_prediction", "Random Forest: Predicted vs Actual")
+predict_vs_actual_plot(plot_df, "svm_prediction", "SVM: Predicted vs Actual")
+
+
+```
+
+
+## Conclusion 
+Based on the RMSE results, Linear Regression performed the best with the lowest RMSE value. This indicates that it produces the most accurate predictions for face_to_face_social_hours_weekly, with the smallest average error compared to the other models.

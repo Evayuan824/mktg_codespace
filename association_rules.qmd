@@ -1,0 +1,211 @@
+---
+title: "Assignment 10"
+execute: 
+  echo: true
+  eval: true
+format:
+  html:
+    code-fold: false
+    self-contained: true
+jupyter: python3
+---
+
+
+
+## Summary of this rmd file:
+1. Introduction to Association Rules
+2. Example 1: Market Basket Analysis (Grocery Data)
+3. Example 2: Retailer Data (no product name) 
+4. Exercise: Customer Segmentation Data
+
+# 1. Association Rules
+
+## 1.1 Concepts
+
+The basic idea of association rules is to see what events occur together often. Specifically, we are particularly interested in events that occur together **more often than one would expect** based on their individual rates of occurrence.
+
+For example, a grocery store might want to know what combinations of products consumers tend to buy together. Suppose that, based on their transaction data, the grocery store finds that the proportion of consumers that purchase milk is 0.1 (i.e., 10%) and the proportion of consumers that purchase eggs is 0.2 (i.e., 20%). If purchasing milk is independent of purchasing eggs, then we would expect the proportion of consumers who purchase both milk and eggs to be $0.2*0.1 = 0.02$, or 2%. However, let's say that, based on the transaction data, the grocery store finds that the proportion of consumers who purchase both milk and eggs turns out to be 8%; in other words, out of 100 customers, 8 customers would purchase both milk and eggs. This proportion is much higher than what we would expect them to occur based on the individual proportions (2%), which suggests that there is evidence of an association. Association rules mining is a principled way of exploring and discovering such interesting associations in a data set.
+
+
+## 1.2 Terminologies
+
+* A **transaction** is a set of items/events that go together. Example: a transaction might be {milk, chips, eggs}.
+
+* A **rule** is the conditional relationship of items. Example: {shampoo, body wash} ->|{conditioner}. The goal of association rules mining is to find rules whose association is higher than expected based on the items' individual frequencies.
+
+* **support(SET)**: the proportion of transactions that contain SET. Example: support(milk, eggs) = 0.08 means 8% of total transactions contain both milk and eggs.
+
+* **confidence(RULE)**: the proportion of transactions that contain items on the right hand side of a rule, conditional on the transactions that contain the items on the left hand side of the rule. In other words, among transactions that contain the left hand side items, what's the proportion of transactions that also contain the right hand side items. Example: confidence(beer ->| sprite) = 0.3 means that, among all transactions that contain beer, 30% of them also contain sprite. Mathematically, define **LHS** = the left hand side items of the rule; **RHS** = the right hand side items of the rule:
+$$\text{Confidence(RULE)} = \frac{support(\{LHS,RHS\})}{support(LHS)}.$$
+
+* We can compute the **lift(RULE)** of a given rule. Specifically, 
+$$ \text{lift(RULE)} =\frac{support(\{LHS, RHS\})}{support(LHS) \cdot support(RHS)}.$$
+Example: from the introductory example, support(milk) = 0.1, support(eggs) = 0.2, support({milk, eggs}) = 0.08. Therefore,
+$$\text{lift(milk ->| eggs)} = \frac{support(\{milk, eggs\})}{support(milk) * support(eggs)} = \frac{0.08}{0.1*0.2} = \frac{0.08}{0.02} = 4.$$
+Therefore, $\text{lift(milk ->| eggs)} = 4.$ In English, this **lift** means that the probability of a transaction containing both milk and eggs is **4 times** what one would expect if the two items were purchased independently.
+
+
+
+# 2. Example 1: Grocery Data
+
+```{python grocery-data}
+
+# We are going to use a package called "arules" to help us do association 
+# rules mining. This package provides functionality that is slightly 
+# different from other data types we've seen before.
+
+# In the terminal, type the following
+# pip install mlxtend
+import polars as pl
+import pandas as pd
+from mlxtend.frequent_patterns import apriori, fpmax, fpgrowth
+from mlxtend.preprocessing import TransactionEncoder
+from mlxtend.frequent_patterns import association_rules
+
+
+dataset = [['Milk', 'Onion', 'Nutmeg', 'Kidney Beans', 'Eggs', 'Yogurt'],
+           ['Dill', 'Onion', 'Nutmeg', 'Kidney Beans', 'Eggs', 'Yogurt'],
+           ['Milk', 'Apple', 'Kidney Beans', 'Eggs'],
+           ['Milk', 'Unicorn', 'Corn', 'Kidney Beans', 'Yogurt'],
+           ['Corn', 'Onion', 'Onion', 'Kidney Beans', 'Ice cream', 'Eggs']]
+
+```
+
+
+```{python}
+
+te = TransactionEncoder()
+te_ary = te.fit(dataset).transform(dataset)
+
+df = pd.DataFrame(te_ary, columns=te.columns_)
+df
+
+# converts list to a transaction item
+
+```
+
+
+```{python}
+# We use the **apriori** algorithm to search for interesting associations
+#
+# Specifically, we ask the algorithm to return rules that have a minimum
+# support of 0.6.
+frequent_itemsets = apriori(df, min_support=0.6, use_colnames=True)
+
+frequent_itemsets
+
+```
+
+```{python}
+
+# Based on the frequent itemsets, we can compute association rules that are interpretable
+
+
+rules = association_rules(frequent_itemsets, metric="lift", min_threshold=0.3)
+
+
+# Convert frozensets to tuples for better readability in the 'antecedents' and 'consequents' columns
+rules['antecedents'] = rules['antecedents'].apply(lambda x: tuple(x))
+rules['consequents'] = rules['consequents'].apply(lambda x: tuple(x))
+
+
+
+
+rules["antecedent_len"] = rules["antecedents"].apply(lambda x: len(x))
+
+
+rules_sorted = rules.sort_values("lift", ascending = False)
+
+rules_sorted
+
+#syntax for filtering pandas dataframe
+
+rules[ (rules['antecedent_len'] >= 2) &
+       (rules['confidence'] > 0.75) &
+       (rules['lift'] > 1.2) ]
+
+
+
+```
+
+
+
+```{python}
+
+# Additionally, in the results:
+# For a rule LHS |-> RHS
+# - support = Support(LHS & RHS)
+# - antecedent support = Support(LHS)
+# - consequent support = Support(RHS)
+# - confidence = Support(LHS & RHS)/Support(LHS)
+# - lift = confidence/Support(RHS) = Support(LHS & RHS)/{Support(LHS) * Support(RHS)}
+
+
+
+```
+
+
+
+# Application: Customer Demographics Analysis
+
+Association rules mining is very general. It can help uncover interesting patterns of co-occurrences in any data. In the exercise below, try analyzing the demographics of a customer data set. What are some interesting patterns as reflected in your association rules analysis?
+
+```{python demographics}
+seg = pl.read_csv("https://drive.google.com/uc?export=download&id=105s3m_xgfIwLz02y-evwDfpvqymUYkCB")
+
+
+# To use association rules, we need to discretize continuous variables into bins
+# (e.g., age, income, and kids)
+
+seg_df = seg.with_columns([
+
+    pl.when(pl.col("age") < 25).then(pl.lit("19-24"))
+      .when(pl.col("age") < 35).then(pl.lit("25-34"))
+      .when(pl.col("age") < 55).then(pl.lit("35-54"))
+      .when(pl.col("age") < 65).then(pl.lit("55-64"))
+      .otherwise(pl.lit("65+"))
+      .alias("age"),
+
+
+    pl.when(pl.col("income") < 40000).then(pl.lit("Low"))
+      .when(pl.col("income") < 70000).then(pl.lit("Medium"))
+      .when(pl.col("income") < 100000).then(pl.lit("High"))
+      .otherwise(pl.lit("Very High"))
+      .alias("income"),
+      
+
+
+    pl.when(pl.col("kids") < 1).then(pl.lit("No kid"))
+      .when(pl.col("kids") < 2).then(pl.lit("1 kid"))
+      .when(pl.col("kids") < 3).then(pl.lit("2 kids"))
+      .otherwise(pl.lit("3+ kids"))
+      .alias("kids")
+])
+
+seg_df_dummy = seg_df.to_dummies()
+
+seg_df_pd = seg_df_dummy.to_pandas()
+
+
+```
+
+### In-class Exercise (You don't have to submit this)
+
+# Complete the code below. Specifically
+# 1. use seg_df_pd as the data source.
+# 2. call the apriori function and specify min_support = 0.3 
+# 3. use output from step 2 as input to the association_rules function. Specify min_threshold = 0.3 and metric = "lift"
+# 4. display the top 20 associations based on lift value (descending order)
+
+
+```{python}
+
+q1 = apriori(seg_df_pd, min_support = 0.3, use_colnames = True)
+
+rules = association_rules(q1, metric = "lift", min_threshold = 0.3)
+
+rules.sort_values("lift", ascending = False).head(20)
+
+
+
+```

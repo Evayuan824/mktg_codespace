@@ -1,0 +1,131 @@
+---
+title: "Association Rules - Gaming & Mental Health"
+execute: 
+  echo: true
+  eval: true
+format:
+  html:
+    code-fold: false
+    self-contained: true
+jupyter: python3
+---
+
+## Loading Libraries
+```{python}
+import polars as pl
+import pandas as pd
+from mlxtend.frequent_patterns import apriori
+from mlxtend.frequent_patterns import association_rules
+```
+
+## Load and Discretize Data
+```{python}
+data = pl.read_csv("Gaming and Mental Health.csv")
+
+# Step 1: Pick categorical columns or discretize numeric columns
+data_discrete = data.with_columns([
+
+    pl.when(pl.col("age") < 18).then(pl.lit("Under 18"))
+      .when(pl.col("age") < 25).then(pl.lit("18-24"))
+      .when(pl.col("age") < 35).then(pl.lit("25-34"))
+      .otherwise(pl.lit("35+"))
+      .alias("age_group"),
+
+    pl.when(pl.col("daily_gaming_hours") < 2).then(pl.lit("Low Gaming"))
+      .when(pl.col("daily_gaming_hours") < 5).then(pl.lit("Moderate Gaming"))
+      .otherwise(pl.lit("High Gaming"))
+      .alias("gaming_level"),
+
+    pl.when(pl.col("sleep_hours") < 6).then(pl.lit("Poor Sleep"))
+      .when(pl.col("sleep_hours") < 8).then(pl.lit("Adequate Sleep"))
+      .otherwise(pl.lit("Good Sleep"))
+      .alias("sleep_quality"),
+
+    pl.when(pl.col("social_isolation_score") < 3).then(pl.lit("Low Isolation"))
+      .when(pl.col("social_isolation_score") < 7).then(pl.lit("Moderate Isolation"))
+      .otherwise(pl.lit("High Isolation"))
+      .alias("isolation_level"),
+
+    # Keep these categorical columns as-is
+    pl.col("gaming_addiction_risk_level"),
+    pl.col("mood_state"),
+    pl.col("mood_swing_frequency"),
+])
+
+# Select only the discretized columns for association rules
+cols = ["age_group", "gaming_level", "sleep_quality", "isolation_level",
+        "gaming_addiction_risk_level", "mood_state", "mood_swing_frequency"]
+
+data_discrete = data_discrete.select(cols).drop_nulls()
+print(data_discrete.shape)
+data_discrete.head()
+```
+
+## One-Hot Encode for Apriori
+```{python}
+# One-hot encode all columns (to_dummies creates col_value columns)
+data_dummies = data_discrete.to_dummies()
+data_pd = data_dummies.to_pandas()
+
+print(f"Shape after encoding: {data_pd.shape}")
+data_pd.head()
+```
+
+## Step 2: Run Apriori
+```{python}
+frequent_itemsets = apriori(data_pd, min_support=0.3, use_colnames=True)
+frequent_itemsets = frequent_itemsets.sort_values("support", ascending=False)
+print(f"Number of frequent itemsets: {len(frequent_itemsets)}")
+frequent_itemsets.head(10)
+```
+
+## Step 3: Generate Association Rules
+```{python}
+rules = association_rules(frequent_itemsets, metric="lift", min_threshold=1.0)
+
+# Clean up for readability
+rules['antecedents'] = rules['antecedents'].apply(lambda x: tuple(x))
+rules['consequents'] = rules['consequents'].apply(lambda x: tuple(x))
+rules["antecedent_len"] = rules["antecedents"].apply(lambda x: len(x))
+
+rules_sorted = rules.sort_values("lift", ascending=False)
+print(f"Total rules generated: {len(rules_sorted)}")
+rules_sorted.head(20)
+```
+
+## Step 4: Inspect Interesting Patterns by Lift
+```{python}
+# Filter for strong, meaningful rules
+interesting_rules = rules[
+    (rules["antecedent_len"] >= 1) &
+    (rules["confidence"] > 0.6) &
+    (rules["lift"] > 1.5)
+].sort_values("lift", ascending=False)
+
+print(f"Interesting rules (confidence > 0.6, lift > 1.5): {len(interesting_rules)}")
+interesting_rules[["antecedents", "consequents", "support", "confidence", "lift"]].head(15)
+```
+
+## Interpretation
+```{python}
+# Display top 5 rules for interpretation
+top5 = rules_sorted[["antecedents", "consequents", "support", "confidence", "lift"]].head(5)
+print("Top 5 Rules by Lift:\n")
+for _, row in top5.iterrows():
+    print(f"  {row['antecedents']} --> {row['consequents']}")
+    print(f"    Support: {row['support']:.3f} | Confidence: {row['confidence']:.3f} | Lift: {row['lift']:.3f}")
+    print()
+
+```
+
+Interpretation:
+
+- All top 5 rules center on three co-occurring attributes: High Gaming, Poor Sleep, and the 18-24 age group.
+
+- Rule 1 (Lift = 1.382): Players with Poor Sleep AND Moderate Isolation are 1.38x more likely than chance to also be High Gamers, with 88.6% confidence — the strongest rule found.
+
+- Rule 3 (Lift = 1.349): Among High Gamers aged 18-24, Poor Sleep follows 80.3% of the time, suggesting young heavy gamers disproportionately sacrifice sleep.
+
+- Lift values (~1.35–1.38) indicate moderate but consistent associations — these patterns are real but not extreme, suggesting gaming behavior, sleep quality, and age cluster together meaningfully.
+
+- Notably, addiction risk and mood state did not surface in the top rules, suggesting these variables may be more uniformly distributed or require a lower min_support threshold to reveal associations.
