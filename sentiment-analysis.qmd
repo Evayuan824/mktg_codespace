@@ -1,0 +1,353 @@
+---
+title: "Introduction to Sentiment Analysis and Word Clouds"
+subtitle: "Using Python, Polars, and VADER"
+format:
+  html:
+    code-fold: false
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    highlight-style: github
+execute:
+  echo: true
+  warning: false
+---
+
+# Introduction to Sentiment Analysis and Word Clouds
+
+In this document, we'll explore how to perform sentiment analysis on text data and visualize the results using word clouds. By the end of this session, you'll be able to:
+
+1. Understand what sentiment analysis is and how it works
+2. Use the VADER sentiment analysis tool to analyze text sentiment
+3. Process text data using Polars
+4. Create word clouds to visualize important words in texts
+5. Apply these techniques to real-world examples
+
+Let's get started!
+
+## Setting Up Our Environment
+
+First, let's install the necessary packages if you don't have them already.
+
+```{python}
+# Install necessary packages
+# Uncomment if packages aren't installed
+# !pip install nltk wordcloud matplotlib
+```
+
+```{python}
+# Import the libraries we'll need
+import polars as pl
+import nltk
+import numpy as np
+import matplotlib.pyplot as plt
+
+from wordcloud import WordCloud
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+import string
+import re
+import pandas as pd
+import datetime
+import random
+
+```
+
+```{python}
+# Download necessary NLTK data
+nltk.download('vader_lexicon')
+nltk.download('stopwords')
+nltk.download('punkt')
+nltk.download('punkt_tab')
+```
+
+## Understanding Sentiment Analysis
+
+Sentiment analysis is the process of determining the emotional tone behind a series of words. It's used to identify and extract subjective information from text data.
+
+Common applications include:
+- Analyzing customer reviews and feedback
+- Monitoring social media sentiment about products or brands
+- Tracking public opinion on political issues
+- Evaluating employee satisfaction from surveys
+
+There are several approaches to sentiment analysis:
+
+1. **Rule-based approaches**: Using pre-defined rules to identify sentiment
+2. **Lexicon-based methods**: Using dictionaries of words with associated sentiment scores
+3. **Machine learning approaches**: Training models on labeled data
+4. **Deep learning methods**: Using neural networks for sentiment classification
+
+Today, we'll focus on a lexicon-based approach using VADER (Valence Aware Dictionary and sEntiment Reasoner), which is specifically attuned to sentiments expressed in social media and works well with short texts.
+
+## Introduction to VADER
+
+VADER (Valence Aware Dictionary and sEntiment Reasoner) is a lexicon and rule-based sentiment analysis tool that is specifically attuned to sentiments expressed in social media. It's part of the NLTK package.
+
+VADER uses a combination of a sentiment lexicon (a list of lexical features labeled according to their semantic orientation) and five generalizable rules that embody grammatical and syntactical conventions that humans use to express sentiment intensity.
+
+Let's see how VADER works with some simple examples:
+
+```{python}
+# Initialize the VADER sentiment analyzer
+sid = SentimentIntensityAnalyzer()
+
+# Example texts with different sentiments
+example_texts = [
+    "I love this product! It's amazing and works perfectly.",
+    "This is okay, but not great. It works sometimes.",
+    "Terrible experience. The product broke immediately and customer service was unhelpful.",
+    "The weather is nice today."
+]
+
+# Analyze each text
+for i, text in enumerate(example_texts):
+    sentiment_scores = sid.polarity_scores(text)
+    print(f"Example {i+1}: {text}")
+    print(f"Sentiment Scores: {sentiment_scores}")
+    print()
+```
+
+### Understanding VADER's Output
+
+VADER returns a dictionary with four scores:
+
+1. **neg**: Proportion of the text that is negative (0 to 1)
+2. **neu**: Proportion of the text that is neutral (0 to 1)
+3. **pos**: Proportion of the text that is positive (0 to 1)
+4. **compound**: Normalized sum of all the lexicon ratings, from -1 (extremely negative) to +1 (extremely positive)
+
+The compound score is the most useful for determining the overall sentiment. Typically:
+- Compound score ≥ 0.05: Positive sentiment
+- Compound score ≤ -0.05: Negative sentiment
+- Compound score between -0.05 and 0.05: Neutral sentiment
+
+Let's create a function to classify sentiment based on the compound score:
+
+```{python}
+def classify_sentiment(compound_score):
+    if compound_score >= 0.05:
+        return "positive"
+    elif compound_score <= -0.05:
+        return "negative"
+    else:
+        return "neutral"
+
+# Test our function on the previous examples
+for i, text in enumerate(example_texts):
+    sentiment_scores = sid.polarity_scores(text)
+    sentiment_category = classify_sentiment(sentiment_scores['compound'])
+    print(f"Example {i+1}: {text}")
+    print(f"Sentiment: {sentiment_category} (compound score: {sentiment_scores['compound']:.3f})")
+    print()
+```
+
+### VADER's Special Features
+
+VADER is particularly good at handling:
+1. Punctuation emphasis (e.g., "Amazing!!!" vs "Amazing.")
+2. Capitalization emphasis (e.g., "AMAZING" vs "amazing")
+3. Degree modifiers (e.g., "extremely good" vs "slightly good")
+4. Conjunctions (detecting sentiment shifts with "but")
+5. Negation (e.g., "not bad" vs "bad")
+
+Let's see these features in action:
+
+```{python}
+# Examples demonstrating VADER's special features
+special_features = [
+    ("Punctuation", ["That was good.", "That was good!!!", "That was GOOD!!"]),
+    ("Capitalization", ["The service was good", "The service was GOOD"]),
+    ("Degree Modifiers", ["The food was good", "The food was very good", "The food was extremely good"]),
+    ("Conjunctions", ["The room was nice but the service was terrible", "The room was terrible but the service was nice"]),
+    ("Negation", ["The food was bad", "The food was not bad", "The food was not that bad"])
+]
+
+# Analyze each feature set
+for feature_name, examples in special_features:
+    print(f"Feature: {feature_name}")
+    for text in examples:
+        sentiment_scores = sid.polarity_scores(text)
+        sentiment_category = classify_sentiment(sentiment_scores['compound'])
+        print(f"  Text: {text}")
+        print(f"  Sentiment: {sentiment_category} (compound score: {sentiment_scores['compound']:.3f})")
+    print()
+```
+
+## Working with Polars for Text Data
+
+Now let's see how we can use Polars to work with text data and perform sentiment analysis on a dataset.
+
+First, let's create a simple dataset of customer reviews:
+
+```{python}
+# Create a sample dataset
+reviews_data = {
+    "review_id": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    "product": ["Laptop", "Smartphone", "Headphones", "Tablet", "Monitor", "Keyboard", "Mouse", "Speaker", "Camera", "Printer"],
+    "review_text": [
+        "This laptop is amazing! Fast performance and beautiful display. I'm extremely satisfied with my purchase.",
+        "The smartphone is okay. Battery life could be better, but the camera is decent.",
+        "Worst headphones ever! They broke after just two weeks and the sound quality is terrible.",
+        "I love this tablet! The screen is crystal clear and it's very responsive. Perfect for reading and browsing.",
+        "The monitor has good color accuracy, but there's some backlight bleeding. Overall it's acceptable for the price.",
+        "Great keyboard! The keys have nice tactile feedback and it's comfortable for long typing sessions.",
+        "This mouse is not good. It often disconnects and the tracking is inconsistent. Would not recommend.",
+        "AMAZING SOUND QUALITY!!! These speakers are the best I've ever owned. Absolutely worth every penny!",
+        "The camera is decent but not great. It struggles in low light and the auto-focus is sometimes unreliable.",
+        "This printer is terrible. It constantly jams and wastes ink. Avoid at all costs!"
+    ]
+}
+
+# Create a Polars DataFrame
+reviews_df = pl.DataFrame(reviews_data)
+
+# Display the DataFrame
+reviews_df
+```
+
+### Adding Sentiment Analysis to Our DataFrame
+
+Now, let's add sentiment scores to our reviews data:
+
+```{python}
+# Function to apply VADER sentiment analysis and return a dictionary
+def get_sentiment_scores(text):
+    scores = sid.polarity_scores(text)
+    return scores
+
+# Apply sentiment analysis to each review
+sentiment_results = [get_sentiment_scores(review) for review in reviews_df['review_text']]
+
+# Create new DataFrame with sentiment scores
+sentiment_df = pl.DataFrame({
+    'negative': [result['neg'] for result in sentiment_results],
+    'neutral': [result['neu'] for result in sentiment_results],
+    'positive': [result['pos'] for result in sentiment_results],
+    'compound': [result['compound'] for result in sentiment_results]
+})
+
+# Add a sentiment category column based on compound score
+sentiment_df = sentiment_df.with_columns(
+    pl.when(pl.col('compound') >= 0.05).then(pl.lit('positive'))
+      .when(pl.col('compound') <= -0.05).then(pl.lit('negative'))
+      .otherwise(pl.lit('neutral'))
+      .alias('sentiment')
+)
+
+# Combine with original DataFrame
+reviews_with_sentiment = reviews_df.with_columns([
+    sentiment_df['negative'].alias('negative_score'),
+    sentiment_df['neutral'].alias('neutral_score'),
+    sentiment_df['positive'].alias('positive_score'),
+    sentiment_df['compound'].alias('compound_score'),
+    sentiment_df['sentiment']
+])
+
+# Display the results
+reviews_with_sentiment
+```
+
+
+## Word Cloud Visualization
+
+Word clouds are a great way to visualize the most common or important words in a text. Let's create word clouds for our review data, separating positive and negative reviews.
+
+```{python}
+# Text preprocessing function
+def preprocess_text(text):
+    # Convert to lowercase
+    text = text.lower()
+    
+    # Remove punctuation
+    text = re.sub(f'[{string.punctuation}]', ' ', text)
+    
+    # Tokenize
+    tokens = word_tokenize(text)
+    
+    # Remove stopwords
+    stop_words = set(stopwords.words('english'))
+    filtered_tokens = [word for word in tokens if word not in stop_words]
+    
+    # Join the tokens back into a string
+    return ' '.join(filtered_tokens)
+```
+
+```{python}
+# Create word clouds for different sentiment categories
+positive_reviews = reviews_with_sentiment.filter(pl.col('sentiment') == 'positive')
+negative_reviews = reviews_with_sentiment.filter(pl.col('sentiment') == 'negative')
+neutral_reviews = reviews_with_sentiment.filter(pl.col('sentiment') == 'neutral')
+
+# Preprocess and combine texts
+positive_text = ' '.join([preprocess_text(text) for text in positive_reviews['review_text']])
+negative_text = ' '.join([preprocess_text(text) for text in negative_reviews['review_text']])
+neutral_text = ' '.join([preprocess_text(text) for text in neutral_reviews['review_text']])  # May be empty if no neutral reviews
+
+# Function to generate word cloud
+def generate_wordcloud(text, title, color='viridis'):
+    if not text.strip():  # Check if text is empty
+        print(f"No text available for {title} word cloud")
+        return
+        
+    wordcloud = WordCloud(
+        width=800,
+        height=400,
+        background_color='white',
+        colormap=color,
+        max_words=100,
+        contour_width=1,
+        contour_color='steelblue'
+    ).generate(text)
+    
+    plt.figure(figsize=(10, 5))
+    plt.imshow(wordcloud, interpolation='bilinear')
+    plt.axis('off')
+    plt.title(title)
+    plt.show()
+
+# Generate word clouds
+generate_wordcloud(positive_text, 'Word Cloud for Positive Reviews', 'Greens')
+generate_wordcloud(negative_text, 'Word Cloud for Negative Reviews', 'Reds')
+generate_wordcloud(neutral_text, 'Word Cloud for Neutral Reviews', 'Blues')
+```
+
+## Conclusion and Practical Applications
+
+In this document, we've explored sentiment analysis and word cloud visualization using Python, Polars, and VADER. Here's a summary of what we've covered:
+
+1. **Understanding Sentiment Analysis**:
+   - We learned how sentiment analysis can identify emotional tone in text
+   - We explored VADER, a lexicon-based sentiment analyzer that works well with social media content
+   - We saw how VADER handles special features like punctuation, capitalization, and negations
+
+2. **Text Processing with Polars**:
+   - We combined sentiment scores with our original data for analysis
+
+3. **Word Cloud Visualization**:
+   - We created word clouds to visualize frequent terms in text data
+   - We filtered text by sentiment to identify positive and negative keywords
+
+
+### Potential Business Applications:
+
+1. **Customer Experience Improvement**:
+   - Monitor customer reviews to identify pain points
+   - Track sentiment changes after product updates or service changes
+   - Compare sentiment across product categories to prioritize improvements
+
+2. **Brand Monitoring**:
+   - Track brand perception on social media
+   - Detect negative sentiment spikes that may indicate PR issues
+   - Identify positive aspects of your brand to emphasize in marketing
+
+3. **Competitive Analysis**:
+   - Compare sentiment between your brand and competitors
+   - Identify competitor weaknesses that you can capitalize on
+   - Benchmark your sentiment performance against industry standards
+
+4. **Market Research**:
+   - Analyze public reaction to new product announcements
+   - Gauge interest and sentiment about industry trends
+   - Identify customer preferences and expectations
