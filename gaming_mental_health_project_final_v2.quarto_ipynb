@@ -1,0 +1,972 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "---\n",
+        "title: \"Gaming & Mental Health: Marketing Analytics\"\n",
+        "subtitle: \"MKTG 3501 — Spring 2026 | Group Project\"\n",
+        "author: \"Tanishi Datta, Ayush Desai, Jane Gullason, Moonsu Kang, Eva Yuan\"\n",
+        "format:\n",
+        "  html:\n",
+        "    toc: true\n",
+        "    toc-depth: 3\n",
+        "    toc-title: \"Contents\"\n",
+        "    theme: cosmo\n",
+        "    embed-resources: true\n",
+        "    code-fold: true\n",
+        "    df-print: paged\n",
+        "execute:\n",
+        "  warning: false\n",
+        "  message: false\n",
+        "---\n",
+        "\n",
+        "## Executive Summary\n",
+        "\n",
+        "The U.S. gaming industry is worth over $67 billion, with young people aged 18 to 34 making up its core user base. Our client is a mental health company looking to run a targeted awareness campaign aimed at esports students and young gamers who are dealing with stress, burnout, sleep issues, and anxiety tied to excessive gaming. Using a dataset of 1,000 gamers, we ran segmentation, predictive modeling, and association analysis to identify the highest-risk individuals and build out a data-driven marketing strategy.\n",
+        "\n",
+        "The two questions driving this project:\n",
+        "\n",
+        "- Which gamer segments face the greatest addiction-related mental health risk, and what behavioral and demographic factors contribute to that risk?\n",
+        "- How can identified risk patterns inform targeted intervention and outreach strategies?\n",
+        "\n",
+        "---\n",
+        "\n",
+        "## 1. Data Overview"
+      ],
+      "id": "eee439a9"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "import polars as pl\n",
+        "import plotly.express as px\n",
+        "import plotly.graph_objects as go\n",
+        "from plotly.subplots import make_subplots\n",
+        "\n",
+        "import numpy as np\n",
+        "from sklearn.cluster import KMeans\n",
+        "from sklearn.preprocessing import StandardScaler, LabelEncoder\n",
+        "from sklearn.pipeline import Pipeline\n",
+        "from sklearn.compose import ColumnTransformer\n",
+        "from sklearn.preprocessing import OneHotEncoder\n",
+        "from sklearn.linear_model import LogisticRegression\n",
+        "from sklearn.model_selection import train_test_split\n",
+        "from sklearn.metrics import confusion_matrix, accuracy_score, classification_report\n",
+        "from mlxtend.frequent_patterns import apriori, association_rules\n",
+        "from mlxtend.preprocessing import TransactionEncoder\n",
+        "import pandas as pd\n",
+        "\n",
+        "# Load dataset\n",
+        "gaming = pl.read_csv(\"Gaming and Mental Health.csv\", ignore_errors=True)\n",
+        "\n",
+        "print(\"Rows:\", gaming.shape[0], \"Columns:\", gaming.shape[1])\n",
+        "gaming.head(5)"
+      ],
+      "id": "cd731a91",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| output: false\n",
+        "# Column names and types\n",
+        "gaming.schema"
+      ],
+      "id": "a34ffbb3",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "# Summary statistics for numeric columns\n",
+        "gaming.select(pl.col(pl.Float64, pl.Int64)).describe()"
+      ],
+      "id": "7a9c235e",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "---\n",
+        "\n",
+        "## 2. Exploratory Data Analysis\n",
+        "\n",
+        "Before running any models, we spent time just looking at the data. Distributions, relationships between variables, and how the pre-assigned risk labels broke down across the sample. A few patterns stood out early that ended up shaping our modeling decisions.\n",
+        "\n",
+        "### 2.1 Age Distribution"
+      ],
+      "id": "390177ae"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "fig = px.histogram(\n",
+        "    gaming.to_pandas(),\n",
+        "    x=\"age\",\n",
+        "    nbins=20,\n",
+        "    color_discrete_sequence=[\"#636EFA\"],\n",
+        "    title=\"Distribution of Gamer Age\",\n",
+        "    labels={\"age\": \"Age\"},\n",
+        ")\n",
+        "fig.update_layout(bargap=0.05)\n",
+        "fig.show()"
+      ],
+      "id": "05cf2bd2",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 2.2 Daily Gaming Hours"
+      ],
+      "id": "4a87de79"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "fig = px.histogram(\n",
+        "    gaming.to_pandas(),\n",
+        "    x=\"daily_gaming_hours\",\n",
+        "    nbins=25,\n",
+        "    color=\"gender\",\n",
+        "    barmode=\"overlay\",\n",
+        "    title=\"Daily Gaming Hours by Gender\",\n",
+        "    labels={\"daily_gaming_hours\": \"Daily Gaming Hours\"},\n",
+        "    opacity=0.75,\n",
+        ")\n",
+        "fig.show()"
+      ],
+      "id": "2e520e55",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 2.3 Sleep Hours Distribution"
+      ],
+      "id": "65d02d15"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "fig = px.histogram(\n",
+        "    gaming.to_pandas(),\n",
+        "    x=\"sleep_hours\",\n",
+        "    nbins=20,\n",
+        "    color=\"gaming_addiction_risk_level\",\n",
+        "    barmode=\"overlay\",\n",
+        "    title=\"Sleep Hours by Addiction Risk Level\",\n",
+        "    labels={\"sleep_hours\": \"Sleep Hours\", \"gaming_addiction_risk_level\": \"Risk Level\"},\n",
+        "    opacity=0.75,\n",
+        "    category_orders={\"gaming_addiction_risk_level\": [\"Low\", \"Moderate\", \"High\", \"Severe\"]},\n",
+        ")\n",
+        "fig.show()"
+      ],
+      "id": "f76fa466",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 2.4 Gaming Hours vs. Social Isolation Score"
+      ],
+      "id": "fa152267"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "fig = px.scatter(\n",
+        "    gaming.to_pandas(),\n",
+        "    x=\"daily_gaming_hours\",\n",
+        "    y=\"social_isolation_score\",\n",
+        "    color=\"gaming_addiction_risk_level\",\n",
+        "    title=\"Daily Gaming Hours vs. Social Isolation Score\",\n",
+        "    labels={\n",
+        "        \"daily_gaming_hours\": \"Daily Gaming Hours\",\n",
+        "        \"social_isolation_score\": \"Social Isolation Score\",\n",
+        "        \"gaming_addiction_risk_level\": \"Risk Level\",\n",
+        "    },\n",
+        "    category_orders={\"gaming_addiction_risk_level\": [\"Low\", \"Moderate\", \"High\", \"Severe\"]},\n",
+        "    opacity=0.6,\n",
+        ")\n",
+        "fig.show()"
+      ],
+      "id": "e76ea9ec",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Social isolation clearly increases as gaming hours go up, and the High/Severe risk users are noticeably concentrated toward the upper right of the chart. This relationship between gaming hours and isolation ended up being one of the stronger signals in the predictive model later on.\n",
+        "\n",
+        "### 2.5 Addiction Risk Level Breakdown"
+      ],
+      "id": "1b015fa2"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "risk_counts = (\n",
+        "    gaming\n",
+        "    .group_by(\"gaming_addiction_risk_level\")\n",
+        "    .agg(pl.count().alias(\"count\"))\n",
+        "    .sort(\"count\", descending=True)\n",
+        ")\n",
+        "\n",
+        "fig = px.bar(\n",
+        "    risk_counts.to_pandas(),\n",
+        "    x=\"gaming_addiction_risk_level\",\n",
+        "    y=\"count\",\n",
+        "    color=\"gaming_addiction_risk_level\",\n",
+        "    title=\"Count of Users by Addiction Risk Level\",\n",
+        "    labels={\"gaming_addiction_risk_level\": \"Risk Level\", \"count\": \"Count\"},\n",
+        "    category_orders={\"gaming_addiction_risk_level\": [\"Low\", \"Moderate\", \"High\", \"Severe\"]},\n",
+        ")\n",
+        "fig.update_layout(showlegend=False, margin=dict(r=40))\n",
+        "fig.update_xaxes(tickangle=0)\n",
+        "fig.show()"
+      ],
+      "id": "7bd64165",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 2.6 Mood State by Risk Level"
+      ],
+      "id": "8f20d9c5"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "mood_risk = (\n",
+        "    gaming\n",
+        "    .group_by([\"gaming_addiction_risk_level\", \"mood_state\"])\n",
+        "    .agg(pl.count().alias(\"count\"))\n",
+        ")\n",
+        "\n",
+        "fig = px.bar(\n",
+        "    mood_risk.to_pandas(),\n",
+        "    x=\"gaming_addiction_risk_level\",\n",
+        "    y=\"count\",\n",
+        "    color=\"mood_state\",\n",
+        "    barmode=\"stack\",\n",
+        "    title=\"Mood State Distribution by Addiction Risk Level\",\n",
+        "    labels={\"gaming_addiction_risk_level\": \"Risk Level\", \"count\": \"Count\", \"mood_state\": \"Mood\"},\n",
+        "    category_orders={\"gaming_addiction_risk_level\": [\"Low\", \"Moderate\", \"High\", \"Severe\"]},\n",
+        ")\n",
+        "fig.show()"
+      ],
+      "id": "88521d0a",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 2.7 Game Genre Popularity"
+      ],
+      "id": "c366becd"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "genre_counts = (\n",
+        "    gaming\n",
+        "    .group_by(\"game_genre\")\n",
+        "    .agg(pl.count().alias(\"count\"))\n",
+        "    .sort(\"count\", descending=True)\n",
+        ")\n",
+        "\n",
+        "fig = px.bar(\n",
+        "    genre_counts.to_pandas(),\n",
+        "    x=\"game_genre\",\n",
+        "    y=\"count\",\n",
+        "    title=\"Popularity of Game Genres\",\n",
+        "    labels={\"game_genre\": \"Genre\", \"count\": \"Count\"},\n",
+        "    color=\"count\",\n",
+        "    color_continuous_scale=\"Blues\",\n",
+        ")\n",
+        "fig.show()"
+      ],
+      "id": "4f2f3418",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "FPS and Mobile Games are the two most popular genres, each with around 150 respondents. Seven genres appear in total. Genre ended up as a feature in the logistic regression, so it was worth understanding the distribution upfront.\n",
+        "\n",
+        "---\n",
+        "\n",
+        "## 3. Segmentation (K-Means Clustering)\n",
+        "\n",
+        "The goal here was to group users into distinct behavioral profiles, separate from the pre-assigned risk labels in the dataset. Those cluster profiles are something the mental health company could realistically act on — they describe who a person is, not just what category they've been put in.\n",
+        "\n",
+        "### 3.1 Prepare Clustering Bases"
+      ],
+      "id": "f4fae6a9"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "# Select numeric clustering variables\n",
+        "cluster_cols = [\n",
+        "    \"daily_gaming_hours\",\n",
+        "    \"sleep_hours\",\n",
+        "    \"social_isolation_score\",\n",
+        "    \"exercise_hours_weekly\",\n",
+        "    \"face_to_face_social_hours_weekly\",\n",
+        "    \"work_productivity_score\",\n",
+        "    \"monthly_game_spending_usd\",\n",
+        "    \"years_gaming\",\n",
+        "]\n",
+        "\n",
+        "gaming_bases = gaming.select(cluster_cols).drop_nulls().to_pandas()"
+      ],
+      "id": "cedd72be",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 3.2 Elbow Plot to Choose Optimal K"
+      ],
+      "id": "d24a4ba1"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "scaler = StandardScaler()\n",
+        "X_scaled = scaler.fit_transform(gaming_bases)\n",
+        "\n",
+        "inertias = []\n",
+        "k_range = range(2, 11)\n",
+        "\n",
+        "for k in k_range:\n",
+        "    km = KMeans(n_clusters=k, random_state=42, n_init=10)\n",
+        "    km.fit(X_scaled)\n",
+        "    inertias.append(km.inertia_)\n",
+        "\n",
+        "fig = px.line(\n",
+        "    x=list(k_range),\n",
+        "    y=inertias,\n",
+        "    markers=True,\n",
+        "    title=\"Elbow Plot: Inertia vs. Number of Clusters\",\n",
+        "    labels={\"x\": \"Number of Clusters (k)\", \"y\": \"Inertia\"},\n",
+        ")\n",
+        "fig.show()"
+      ],
+      "id": "167a3a6c",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The elbow plot doesn't show a sharp bend, instead inertia decreases pretty steadily from k=2 through k=9. We landed on k=3 because it gave us the most interpretable and distinct profiles when we looked at the actual cluster means, especially on gaming hours, sleep, and isolation. It was more of a judgment call than a hard statistical cutoff, which we acknowledge in the limitations section.\n",
+        "\n",
+        "### 3.3 Run K-Means with Optimal K"
+      ],
+      "id": "882e1f37"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "# Set k based on elbow plot inspection — curve flattens most visibly after k=3\n",
+        "optimal_k = 3\n",
+        "\n",
+        "km_final = KMeans(n_clusters=optimal_k, random_state=42, n_init=10)\n",
+        "cluster_labels = km_final.fit_predict(X_scaled)\n",
+        "\n",
+        "# Attach cluster labels back to the full dataset (rows without nulls)\n",
+        "gaming_clustered = gaming.drop_nulls(subset=cluster_cols).with_columns(\n",
+        "    pl.Series(\"cluster\", list(cluster_labels))\n",
+        ")"
+      ],
+      "id": "6f4385e1",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 3.4 Cluster Profile Summary"
+      ],
+      "id": "ba36c2ba"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "# Mean values per cluster\n",
+        "cluster_profile = (\n",
+        "    gaming_clustered\n",
+        "    .group_by(\"cluster\")\n",
+        "    .agg([\n",
+        "        pl.mean(\"daily_gaming_hours\").alias(\"daily_gaming_hours\"),\n",
+        "        pl.mean(\"sleep_hours\").alias(\"sleep_hours\"),\n",
+        "        pl.mean(\"social_isolation_score\").alias(\"social_isolation_score\"),\n",
+        "        pl.mean(\"exercise_hours_weekly\").alias(\"exercise_hours_weekly\"),\n",
+        "        pl.mean(\"face_to_face_social_hours_weekly\").alias(\"face_to_face_social_hours_weekly\"),\n",
+        "        pl.mean(\"work_productivity_score\").alias(\"work_productivity_score\"),\n",
+        "        pl.mean(\"monthly_game_spending_usd\").alias(\"monthly_game_spending_usd\"),\n",
+        "        pl.mean(\"years_gaming\").alias(\"years_gaming\"),\n",
+        "    ])\n",
+        "    .sort(\"cluster\")\n",
+        ")\n",
+        "\n",
+        "cluster_profile"
+      ],
+      "id": "f87024c5",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 3.5 Visualize Clusters"
+      ],
+      "id": "75d2a2e7"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "gaming_clustered_pd = gaming_clustered.to_pandas()\n",
+        "gaming_clustered_pd[\"cluster\"] = gaming_clustered_pd[\"cluster\"].astype(str)\n",
+        "\n",
+        "fig = px.scatter(\n",
+        "    gaming_clustered_pd,\n",
+        "    x=\"daily_gaming_hours\",\n",
+        "    y=\"social_isolation_score\",\n",
+        "    color=\"cluster\",\n",
+        "    title=\"Clusters: Daily Gaming Hours vs. Social Isolation\",\n",
+        "    labels={\n",
+        "        \"daily_gaming_hours\": \"Daily Gaming Hours\",\n",
+        "        \"social_isolation_score\": \"Social Isolation Score\",\n",
+        "        \"cluster\": \"Cluster\",\n",
+        "    },\n",
+        "    opacity=0.6,\n",
+        ")\n",
+        "fig.show()"
+      ],
+      "id": "db618a96",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 3.6 Cluster Interpretation"
+      ],
+      "id": "2403b640"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "# Cast cluster to string so the chart treats it as a discrete category\n",
+        "gaming_clustered = gaming_clustered.with_columns(\n",
+        "    pl.col(\"cluster\").cast(pl.String).alias(\"cluster\")\n",
+        ")\n",
+        "\n",
+        "# Risk level distribution across clusters\n",
+        "risk_by_cluster = (\n",
+        "    gaming_clustered\n",
+        "    .group_by([\"cluster\", \"gaming_addiction_risk_level\"])\n",
+        "    .agg(pl.count().alias(\"count\"))\n",
+        "    .sort([\"cluster\", \"count\"], descending=[False, True])\n",
+        ")\n",
+        "\n",
+        "fig = px.bar(\n",
+        "    risk_by_cluster.to_pandas(),\n",
+        "    x=\"cluster\",\n",
+        "    y=\"count\",\n",
+        "    color=\"gaming_addiction_risk_level\",\n",
+        "    barmode=\"group\",\n",
+        "    title=\"Addiction Risk Level by Cluster\",\n",
+        "    labels={\"cluster\": \"Cluster\", \"count\": \"Count\", \"gaming_addiction_risk_level\": \"Risk Level\"},\n",
+        "    category_orders={\"gaming_addiction_risk_level\": [\"Low\", \"Moderate\", \"High\", \"Severe\"]},\n",
+        ")\n",
+        "fig.show()"
+      ],
+      "id": "fa924e68",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The three clusters break down into what we're calling Consumed Gamers (Cluster 0), Engaged Gamers (Cluster 1), and Casual Gamers (Cluster 2). Cluster 0 averages 10.4 hours of gaming per day, only 4.6 hours of sleep, and scores high on social isolation; this group maps most closely to the High and Severe risk labels. Clusters 1 and 2 look considerably healthier across all three metrics.\n",
+        "\n",
+        "---\n",
+        "\n",
+        "## 4. Predictive Modeling: Classifying Addiction Risk\n",
+        "\n",
+        "The goal was to build something the client could actually use, a model that flags high-risk users based on a short set of behavioral inputs. We turned the four-level risk variable into a binary target: High or Severe = 1, Low or Moderate = 0.\n",
+        "\n",
+        "### 4.1 Feature Engineering and Preprocessing"
+      ],
+      "id": "97cea094"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "# Define binary target: High/Severe = 1, Low/Moderate = 0\n",
+        "gaming_model = gaming.drop_nulls(subset=cluster_cols + [\"gaming_addiction_risk_level\", \"age\", \"gender\"])\n",
+        "\n",
+        "gaming_pd = gaming_model.with_columns(\n",
+        "    pl.when(pl.col(\"gaming_addiction_risk_level\").is_in([\"High\", \"Severe\"]))\n",
+        "    .then(1)\n",
+        "    .otherwise(0)\n",
+        "    .alias(\"high_risk\")\n",
+        ").to_pandas()\n",
+        "\n",
+        "# Features\n",
+        "numeric_features = [\n",
+        "    \"age\",\n",
+        "    \"daily_gaming_hours\",\n",
+        "    \"sleep_hours\",\n",
+        "    \"social_isolation_score\",\n",
+        "    \"exercise_hours_weekly\",\n",
+        "    \"work_productivity_score\",\n",
+        "    \"monthly_game_spending_usd\",\n",
+        "    \"years_gaming\",\n",
+        "]\n",
+        "\n",
+        "categorical_features = [\"gender\", \"game_genre\", \"gaming_platform\"]\n",
+        "\n",
+        "target = \"high_risk\"\n",
+        "\n",
+        "# Drop rows missing any feature\n",
+        "model_df = gaming_pd[numeric_features + categorical_features + [target]].dropna()\n",
+        "\n",
+        "X = model_df[numeric_features + categorical_features]\n",
+        "y = model_df[target]\n",
+        "\n",
+        "X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)"
+      ],
+      "id": "abc59550",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 4.2 Model Comparison\n",
+        "\n",
+        "Before committing to a single model, we tested three classifiers: decision tree, random forest, and logistic regression. We wanted to see if there was a meaningful accuracy difference before deciding which one to move forward with."
+      ],
+      "id": "ceca12b4"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "from sklearn.tree import DecisionTreeClassifier\n",
+        "from sklearn.ensemble import RandomForestClassifier\n",
+        "\n",
+        "preprocessor = ColumnTransformer(\n",
+        "    transformers=[\n",
+        "        (\"num\", StandardScaler(), numeric_features),\n",
+        "        (\"cat\", OneHotEncoder(handle_unknown=\"ignore\"), categorical_features),\n",
+        "    ]\n",
+        ")\n",
+        "\n",
+        "# Logistic Regression\n",
+        "pipe_lr = Pipeline(steps=[\n",
+        "    (\"preprocessor\", preprocessor),\n",
+        "    (\"classifier\", LogisticRegression(max_iter=1000, solver=\"lbfgs\")),\n",
+        "])\n",
+        "pipe_lr.fit(X_train, y_train)\n",
+        "lr_preds = pipe_lr.predict(X_test)\n",
+        "lr_acc = accuracy_score(y_test, lr_preds)\n",
+        "\n",
+        "# Decision Tree\n",
+        "pipe_dt = Pipeline(steps=[\n",
+        "    (\"preprocessor\", preprocessor),\n",
+        "    (\"classifier\", DecisionTreeClassifier(random_state=42)),\n",
+        "])\n",
+        "pipe_dt.fit(X_train, y_train)\n",
+        "dt_preds = pipe_dt.predict(X_test)\n",
+        "dt_acc = accuracy_score(y_test, dt_preds)\n",
+        "\n",
+        "# Random Forest\n",
+        "pipe_rf = Pipeline(steps=[\n",
+        "    (\"preprocessor\", preprocessor),\n",
+        "    (\"classifier\", RandomForestClassifier(n_estimators=100, random_state=42)),\n",
+        "])\n",
+        "pipe_rf.fit(X_train, y_train)\n",
+        "rf_preds = pipe_rf.predict(X_test)\n",
+        "rf_acc = accuracy_score(y_test, rf_preds)\n",
+        "\n",
+        "print(\"Logistic Regression Accuracy:\", round(lr_acc, 4))\n",
+        "print(\"Decision Tree Accuracy:       \", round(dt_acc, 4))\n",
+        "print(\"Random Forest Accuracy:       \", round(rf_acc, 4))\n",
+        "\n",
+        "comparison_df = pd.DataFrame({\n",
+        "    \"Model\": [\"Logistic Regression\", \"Decision Tree\", \"Random Forest\"],\n",
+        "    \"Accuracy\": [lr_acc, dt_acc, rf_acc]\n",
+        "})\n",
+        "\n",
+        "fig = px.bar(\n",
+        "    comparison_df,\n",
+        "    x=\"Model\",\n",
+        "    y=\"Accuracy\",\n",
+        "    color=\"Model\",\n",
+        "    text_auto=\".4f\",\n",
+        "    title=\"Model Accuracy Comparison\",\n",
+        "    range_y=[0, 1],\n",
+        ")\n",
+        "fig.update_layout(showlegend=False)\n",
+        "fig.show()"
+      ],
+      "id": "47677cf1",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The random forest had a slightly higher accuracy, but logistic regression was very close and has the major advantage of interpretability. Since a core deliverable for the client is a simple screening tool based on the top predictors, being able to read off coefficients matters more than squeezing out a marginal accuracy gain. We went with logistic regression.\n",
+        "\n",
+        "### 4.3 Final Model: Logistic Regression\n",
+        "\n",
+        "We use the logistic regression pipeline already trained above as our final model."
+      ],
+      "id": "3abc4807"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "# pipe_lr was already fitted in section 4.2 — we use it directly\n",
+        "y_pred = pipe_lr.predict(X_test)"
+      ],
+      "id": "e56f9b03",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 4.4 Model Evaluation"
+      ],
+      "id": "b6ca9824"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "acc = accuracy_score(y_test, y_pred)\n",
+        "print(\"Accuracy:\", round(acc, 4))\n",
+        "print()\n",
+        "print(classification_report(y_test, y_pred, target_names=[\"Low/Moderate\", \"High/Severe\"]))"
+      ],
+      "id": "2379667f",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The model hits 89% accuracy on the held-out test set. It performs better on the Low/Moderate class (F1 = 0.92) than High/Severe (F1 = 0.81), which is expected given the class imbalance in the data, there are roughly 2.5x as many Low/Moderate cases. In a real deployment, false negatives (missing an at-risk user) would be more costly than false positives, so it'd be worth revisiting the classification threshold or using SMOTE to oversample the minority class.\n",
+        "\n",
+        "### 4.5 Confusion Matrix"
+      ],
+      "id": "e0e1b753"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "cm = confusion_matrix(y_test, y_pred)\n",
+        "cm_labels = [\"Low/Moderate\", \"High/Severe\"]\n",
+        "\n",
+        "fig = px.imshow(\n",
+        "    cm,\n",
+        "    text_auto=True,\n",
+        "    x=cm_labels,\n",
+        "    y=cm_labels,\n",
+        "    color_continuous_scale=\"Blues\",\n",
+        "    title=\"Confusion Matrix — Logistic Regression\",\n",
+        "    labels={\"x\": \"Predicted\", \"y\": \"Actual\"},\n",
+        ")\n",
+        "fig.show()"
+      ],
+      "id": "5161b1eb",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 4.6 Feature Importances (Coefficients)"
+      ],
+      "id": "c5315ed1"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "# Extract coefficients from the logistic regression step\n",
+        "coef_values = pipe_lr.named_steps[\"classifier\"].coef_[0]\n",
+        "cat_feature_names = pipe_lr.named_steps[\"preprocessor\"].named_transformers_[\"cat\"].get_feature_names_out(categorical_features)\n",
+        "\n",
+        "all_features = numeric_features + list(cat_feature_names)\n",
+        "\n",
+        "coef_df = pd.DataFrame({\n",
+        "    \"feature\": all_features,\n",
+        "    \"coefficient\": coef_values\n",
+        "})\n",
+        "\n",
+        "coef_df[\"abs_coefficient\"] = coef_df[\"coefficient\"].abs()\n",
+        "coef_df = coef_df.sort_values(\"abs_coefficient\", ascending=False).head(15)\n",
+        "\n",
+        "fig = px.bar(\n",
+        "    coef_df,\n",
+        "    x=\"coefficient\",\n",
+        "    y=\"feature\",\n",
+        "    orientation=\"h\",\n",
+        "    title=\"Top 15 Feature Coefficients — Logistic Regression\",\n",
+        "    labels={\"coefficient\": \"Coefficient\", \"feature\": \"Feature\"},\n",
+        "    color=\"coefficient\",\n",
+        "    color_continuous_scale=\"RdBu\",\n",
+        ")\n",
+        "fig.update_layout(yaxis=dict(autorange=\"reversed\"))\n",
+        "fig.show()"
+      ],
+      "id": "0cf37056",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Daily gaming hours has by far the largest positive coefficient, followed by sleep hours (negative — more sleep, lower risk) and social isolation score. Game genre also shows up — Battle Royale is positively associated with high risk, while Strategy and MOBA genres are negative. The platform variable matters too, with multi-platform users showing higher risk than single-platform players.\n",
+        "\n",
+        "---\n",
+        "\n",
+        "## 5. Association Rules Analysis\n",
+        "\n",
+        "This section looks at which symptoms tend to show up together across the gamer population. The idea is that if certain physical and behavioral symptoms co-occur at high rates, the campaign can lead with a message that resonates across multiple pain points at once — without having to name mental health directly.\n",
+        "\n",
+        "### 5.1 Build Transaction Data"
+      ],
+      "id": "a838dbac"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "# Binarize relevant columns into symptom flags\n",
+        "assoc_df = gaming.select([\n",
+        "    \"withdrawal_symptoms\",\n",
+        "    \"loss_of_other_interests\",\n",
+        "    \"continued_despite_problems\",\n",
+        "    \"eye_strain\",\n",
+        "    \"back_neck_pain\",\n",
+        "]).drop_nulls().to_pandas()\n",
+        "\n",
+        "# Convert TRUE/FALSE strings to boolean for each column\n",
+        "symptom_cols = [\"withdrawal_symptoms\", \"loss_of_other_interests\", \n",
+        "                \"continued_despite_problems\", \"eye_strain\", \"back_neck_pain\"]\n",
+        "\n",
+        "for col in symptom_cols:\n",
+        "    assoc_df[col] = assoc_df[col].astype(str).str.upper().map({\"TRUE\": True, \"FALSE\": False})\n",
+        "\n",
+        "assoc_df = assoc_df.dropna()"
+      ],
+      "id": "7803583b",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 5.2 Run Apriori"
+      ],
+      "id": "9ac21745"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "frequent_itemsets = apriori(assoc_df, min_support=0.15, use_colnames=True)\n",
+        "frequent_itemsets.sort_values(\"support\", ascending=False).head(10)"
+      ],
+      "id": "57206bf9",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 5.3 Generate Association Rules"
+      ],
+      "id": "9ea4174d"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "rules = association_rules(frequent_itemsets, metric=\"lift\", min_threshold=0.5)\n",
+        "rules_sorted = rules.sort_values(\"lift\", ascending=False)\n",
+        "rules_sorted[[\"antecedents\", \"consequents\", \"support\", \"confidence\", \"lift\"]].head(15)"
+      ],
+      "id": "2e7ab165",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 5.4 Visualize Rules: Confidence vs. Support"
+      ],
+      "id": "8add02e1"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "rules_plot = rules_sorted.copy()\n",
+        "\n",
+        "# Convert frozensets to strings using a basic for loop\n",
+        "antecedent_labels = []\n",
+        "for itemset in rules_plot[\"antecedents\"]:\n",
+        "    antecedent_labels.append(\", \".join(list(itemset)))\n",
+        "\n",
+        "consequent_labels = []\n",
+        "for itemset in rules_plot[\"consequents\"]:\n",
+        "    consequent_labels.append(\", \".join(list(itemset)))\n",
+        "\n",
+        "rules_plot[\"antecedents\"] = antecedent_labels\n",
+        "rules_plot[\"consequents\"] = consequent_labels\n",
+        "\n",
+        "fig = px.scatter(\n",
+        "    rules_plot,\n",
+        "    x=\"support\",\n",
+        "    y=\"confidence\",\n",
+        "    size=\"lift\",\n",
+        "    color=\"lift\",\n",
+        "    hover_data=[\"antecedents\", \"consequents\"],\n",
+        "    title=\"Association Rules: Support vs. Confidence (bubble size = lift)\",\n",
+        "    labels={\"support\": \"Support\", \"confidence\": \"Confidence\", \"lift\": \"Lift\"},\n",
+        "    color_continuous_scale=\"Viridis\",\n",
+        ")\n",
+        "fig.show()"
+      ],
+      "id": "7a42018f",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "raw",
+      "metadata": {},
+      "source": [
+        "Eye strain stands out as the central co-occurring symptom, appearing in a wide range of high-lift rules alongside withdrawal symptoms, loss of other interests, and back/neck pain. This is useful for campaign design — physical symptoms like eye strain are a lower-stigma entry point than leading with addiction or mental health framing directly.\n",
+        "\n",
+        "---\n",
+        "\n",
+        "## 6. Findings and Recommendations\n",
+        "\n",
+        "### Key Findings\n",
+        "\n",
+        "Three analyses, three consistent signals.\n",
+        "\n",
+        "The segmentation identified three gamer profiles. Cluster 0 (10.4 hrs/day gaming, 4.6 hrs sleep, high isolation) is the highest-risk group and the natural primary target for the campaign. Clusters 1 and 2 show progressively healthier patterns.\n",
+        "\n",
+        "The logistic regression model (89% accuracy) confirmed that daily gaming hours, sleep hours, social isolation score, and work productivity score are the strongest predictors of high/severe addiction risk. These four variables alone provide enough signal to build a short screening intake.\n",
+        "\n",
+        "The association rules analysis showed that eye strain co-occurs with withdrawal symptoms, loss of other interests, and back/neck pain at high rates. Gamers showing physical symptoms are also more likely to show behavioral addiction indicators, which means physical health messaging is an effective and less stigmatizing campaign entry point.\n",
+        "\n",
+        "### Actionable Recommendations\n",
+        "\n",
+        "| Recommendation | Rationale |\n",
+        "|---|---|\n",
+        "| Target Cluster 0 (avg. 10.4 hrs/day, 4.6 hrs sleep, isolation score 6.8) for primary outreach | This segment has the highest concentration of High/Severe risk users |\n",
+        "| Partner with university esports programs | High-risk users skew toward the 18–22 age range with active competitive gaming habits |\n",
+        "| Campaign message: \"Your eyes don't lie\" | Eye strain co-occurs with withdrawal and loss of interests — physical symptoms are a low-stigma entry point |\n",
+        "| Screen users with a 3-question intake (sleep hours, daily gaming hours, social hours) | Top model predictors enable a low-friction, data-backed triage tool |\n",
+        "| Distribute via gaming platforms and Discord servers | Platform variable shows PC and multi-platform users are overrepresented in high-risk groups |\n",
+        "\n",
+        "---\n",
+        "\n",
+        "## 7. Limitations and Caveats\n",
+        "\n",
+        "One thing worth flagging upfront: the K-Means produced 3 behavioral segments, but the dataset has 4 pre-labeled risk levels. These are measuring different things, clusters are derived from behavior and risk labels are pre-assigned, so they were never going to map one-to-one. Cluster 0 contains a mix of High and Severe users, which the section 3.6 chart shows directly.\n",
+        "\n",
+        "The elbow plot didn't give us a clean answer on k. Inertia decreases fairly smoothly from k=2 to k=9, so k=3 was chosen because it produced the most interpretable and clearly separable cluster profiles, not because the plot pointed to it.\n",
+        "\n",
+        "On data quality: `grades_gpa` has 246 missing values (24.6%) and `work_productivity_score` has 326 missing (32.6%). Both were excluded from clustering, and the logistic regression drops affected rows, which reduces the effective training sample. Anything involving work productivity should be read with some caution.\n",
+        "\n",
+        "The dataset itself is synthetic, it was built on Kaggle to simulate relationships between gaming and mental health outcomes. Real-world data would be noisier and would likely bring the 89% model accuracy down.\n",
+        "\n",
+        "Finally, the test set has a roughly 2.5:1 class imbalance (96 Low/Moderate vs. 39 High/Severe cases). The model does better on the majority class (F1 = 0.92 vs. 0.81). In a real deployment, techniques like SMOTE oversampling or adjusting the classification threshold would help improve recall on the at-risk group, where false negatives are the more costly error.\n",
+        "\n",
+        "---"
+      ],
+      "id": "352ec015"
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "name": "python3",
+      "language": "python",
+      "display_name": "Python 3 (ipykernel)",
+      "path": "/home/vscode/.local/share/jupyter/kernels/python3"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 5
+}
