@@ -1,0 +1,652 @@
+---
+title: "Gaming & Mental Health: Marketing Analytics"
+subtitle: "MKTG 3501 — Spring 2026 | Group Project"
+author: "Tanishi Datta, Ayush Desai, Jane Gullason, Moonsu Kang, Eva Yuan"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-title: "Contents"
+    theme: cosmo
+    embed-resources: true
+    code-fold: true
+    df-print: paged
+execute:
+  warning: false
+  message: false
+---
+
+## Executive Summary
+
+The U.S. gaming industry is worth over $67 billion, with young people aged 18 to 34 making up its core user base. Our client is a mental health company looking to run a targeted awareness campaign aimed at esports students and young gamers who are dealing with stress, burnout, sleep issues, and anxiety tied to excessive gaming. Using a dataset of 1,000 gamers, we ran segmentation, predictive modeling, and association analysis to identify the highest-risk individuals and build out a data-driven marketing strategy.
+
+The two questions driving this project:
+
+- Which gamer segments face the greatest addiction-related mental health risk, and what behavioral and demographic factors contribute to that risk?
+- How can identified risk patterns inform targeted intervention and outreach strategies?
+
+---
+
+## 1. Data Overview
+
+```{python}
+import polars as pl
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+import numpy as np
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import confusion_matrix, accuracy_score, classification_report
+from mlxtend.frequent_patterns import apriori, association_rules
+from mlxtend.preprocessing import TransactionEncoder
+import pandas as pd
+
+# Load dataset
+gaming = pl.read_csv("Gaming and Mental Health.csv", ignore_errors=True)
+
+print("Rows:", gaming.shape[0], "Columns:", gaming.shape[1])
+gaming.head(5)
+```
+
+```{python}
+#| output: false
+# Column names and types
+gaming.schema
+```
+
+```{python}
+# Summary statistics for numeric columns
+gaming.select(pl.col(pl.Float64, pl.Int64)).describe()
+```
+
+
+---
+
+## 2. Exploratory Data Analysis
+
+Before running any models, we spent time just looking at the data. Distributions, relationships between variables, and how the pre-assigned risk labels broke down across the sample. A few patterns stood out early that ended up shaping our modeling decisions.
+
+### 2.1 Age Distribution
+
+```{python}
+fig = px.histogram(
+    gaming.to_pandas(),
+    x="age",
+    nbins=20,
+    color_discrete_sequence=["#636EFA"],
+    title="Distribution of Gamer Age",
+    labels={"age": "Age"},
+)
+fig.update_layout(bargap=0.05)
+fig.show()
+```
+
+### 2.2 Daily Gaming Hours
+
+```{python}
+fig = px.histogram(
+    gaming.to_pandas(),
+    x="daily_gaming_hours",
+    nbins=25,
+    color="gender",
+    barmode="overlay",
+    title="Daily Gaming Hours by Gender",
+    labels={"daily_gaming_hours": "Daily Gaming Hours"},
+    opacity=0.75,
+)
+fig.show()
+```
+
+### 2.3 Sleep Hours Distribution
+
+```{python}
+fig = px.histogram(
+    gaming.to_pandas(),
+    x="sleep_hours",
+    nbins=20,
+    color="gaming_addiction_risk_level",
+    barmode="overlay",
+    title="Sleep Hours by Addiction Risk Level",
+    labels={"sleep_hours": "Sleep Hours", "gaming_addiction_risk_level": "Risk Level"},
+    opacity=0.75,
+    category_orders={"gaming_addiction_risk_level": ["Low", "Moderate", "High", "Severe"]},
+)
+fig.show()
+```
+
+### 2.4 Gaming Hours vs. Social Isolation Score
+
+```{python}
+fig = px.scatter(
+    gaming.to_pandas(),
+    x="daily_gaming_hours",
+    y="social_isolation_score",
+    color="gaming_addiction_risk_level",
+    title="Daily Gaming Hours vs. Social Isolation Score",
+    labels={
+        "daily_gaming_hours": "Daily Gaming Hours",
+        "social_isolation_score": "Social Isolation Score",
+        "gaming_addiction_risk_level": "Risk Level",
+    },
+    category_orders={"gaming_addiction_risk_level": ["Low", "Moderate", "High", "Severe"]},
+    opacity=0.6,
+)
+fig.show()
+```
+
+Social isolation clearly increases as gaming hours go up, and the High/Severe risk users are noticeably concentrated toward the upper right of the chart. This relationship between gaming hours and isolation ended up being one of the stronger signals in the predictive model later on.
+
+### 2.5 Addiction Risk Level Breakdown
+
+```{python}
+risk_counts = (
+    gaming
+    .group_by("gaming_addiction_risk_level")
+    .agg(pl.count().alias("count"))
+    .sort("count", descending=True)
+)
+
+fig = px.bar(
+    risk_counts.to_pandas(),
+    x="gaming_addiction_risk_level",
+    y="count",
+    color="gaming_addiction_risk_level",
+    title="Count of Users by Addiction Risk Level",
+    labels={"gaming_addiction_risk_level": "Risk Level", "count": "Count"},
+    category_orders={"gaming_addiction_risk_level": ["Low", "Moderate", "High", "Severe"]},
+)
+fig.update_layout(showlegend=False, margin=dict(r=40))
+fig.update_xaxes(tickangle=0)
+fig.show()
+```
+
+### 2.6 Mood State by Risk Level
+
+```{python}
+mood_risk = (
+    gaming
+    .group_by(["gaming_addiction_risk_level", "mood_state"])
+    .agg(pl.count().alias("count"))
+)
+
+fig = px.bar(
+    mood_risk.to_pandas(),
+    x="gaming_addiction_risk_level",
+    y="count",
+    color="mood_state",
+    barmode="stack",
+    title="Mood State Distribution by Addiction Risk Level",
+    labels={"gaming_addiction_risk_level": "Risk Level", "count": "Count", "mood_state": "Mood"},
+    category_orders={"gaming_addiction_risk_level": ["Low", "Moderate", "High", "Severe"]},
+)
+fig.show()
+```
+
+### 2.7 Game Genre Popularity
+
+```{python}
+genre_counts = (
+    gaming
+    .group_by("game_genre")
+    .agg(pl.count().alias("count"))
+    .sort("count", descending=True)
+)
+
+fig = px.bar(
+    genre_counts.to_pandas(),
+    x="game_genre",
+    y="count",
+    title="Popularity of Game Genres",
+    labels={"game_genre": "Genre", "count": "Count"},
+    color="count",
+    color_continuous_scale="Blues",
+)
+fig.show()
+```
+
+FPS and Mobile Games are the two most popular genres, each with around 150 respondents. Seven genres appear in total. Genre ended up as a feature in the logistic regression, so it was worth understanding the distribution upfront.
+
+---
+
+## 3. Segmentation (K-Means Clustering)
+
+The goal here was to group users into distinct behavioral profiles, separate from the pre-assigned risk labels in the dataset. Those cluster profiles are something the mental health company could realistically act on — they describe who a person is, not just what category they've been put in.
+
+### 3.1 Prepare Clustering Bases
+
+```{python}
+# Select numeric clustering variables
+cluster_cols = [
+    "daily_gaming_hours",
+    "sleep_hours",
+    "social_isolation_score",
+    "exercise_hours_weekly",
+    "face_to_face_social_hours_weekly",
+    "work_productivity_score",
+    "monthly_game_spending_usd",
+    "years_gaming",
+]
+
+gaming_bases = gaming.select(cluster_cols).drop_nulls().to_pandas()
+```
+
+### 3.2 Elbow Plot to Choose Optimal K
+
+```{python}
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(gaming_bases)
+
+inertias = []
+k_range = range(2, 11)
+
+for k in k_range:
+    km = KMeans(n_clusters=k, random_state=42, n_init=10)
+    km.fit(X_scaled)
+    inertias.append(km.inertia_)
+
+fig = px.line(
+    x=list(k_range),
+    y=inertias,
+    markers=True,
+    title="Elbow Plot: Inertia vs. Number of Clusters",
+    labels={"x": "Number of Clusters (k)", "y": "Inertia"},
+)
+fig.show()
+```
+
+The elbow plot doesn't show a sharp bend, instead inertia decreases pretty steadily from k=2 through k=9. We landed on k=3 because it gave us the most interpretable and distinct profiles when we looked at the actual cluster means, especially on gaming hours, sleep, and isolation. It was more of a judgment call than a hard statistical cutoff, which we acknowledge in the limitations section.
+
+### 3.3 Run K-Means with Optimal K
+
+```{python}
+# Set k based on elbow plot inspection — curve flattens most visibly after k=3
+optimal_k = 3
+
+km_final = KMeans(n_clusters=optimal_k, random_state=42, n_init=10)
+cluster_labels = km_final.fit_predict(X_scaled)
+
+# Attach cluster labels back to the full dataset (rows without nulls)
+gaming_clustered = gaming.drop_nulls(subset=cluster_cols).with_columns(
+    pl.Series("cluster", list(cluster_labels))
+)
+```
+
+### 3.4 Cluster Profile Summary
+
+```{python}
+# Mean values per cluster
+cluster_profile = (
+    gaming_clustered
+    .group_by("cluster")
+    .agg([
+        pl.mean("daily_gaming_hours").alias("daily_gaming_hours"),
+        pl.mean("sleep_hours").alias("sleep_hours"),
+        pl.mean("social_isolation_score").alias("social_isolation_score"),
+        pl.mean("exercise_hours_weekly").alias("exercise_hours_weekly"),
+        pl.mean("face_to_face_social_hours_weekly").alias("face_to_face_social_hours_weekly"),
+        pl.mean("work_productivity_score").alias("work_productivity_score"),
+        pl.mean("monthly_game_spending_usd").alias("monthly_game_spending_usd"),
+        pl.mean("years_gaming").alias("years_gaming"),
+    ])
+    .sort("cluster")
+)
+
+cluster_profile
+```
+
+### 3.5 Visualize Clusters
+
+```{python}
+gaming_clustered_pd = gaming_clustered.to_pandas()
+gaming_clustered_pd["cluster"] = gaming_clustered_pd["cluster"].astype(str)
+
+fig = px.scatter(
+    gaming_clustered_pd,
+    x="daily_gaming_hours",
+    y="social_isolation_score",
+    color="cluster",
+    title="Clusters: Daily Gaming Hours vs. Social Isolation",
+    labels={
+        "daily_gaming_hours": "Daily Gaming Hours",
+        "social_isolation_score": "Social Isolation Score",
+        "cluster": "Cluster",
+    },
+    opacity=0.6,
+)
+fig.show()
+```
+
+### 3.6 Cluster Interpretation
+
+```{python}
+# Cast cluster to string so the chart treats it as a discrete category
+gaming_clustered = gaming_clustered.with_columns(
+    pl.col("cluster").cast(pl.String).alias("cluster")
+)
+
+# Risk level distribution across clusters
+risk_by_cluster = (
+    gaming_clustered
+    .group_by(["cluster", "gaming_addiction_risk_level"])
+    .agg(pl.count().alias("count"))
+    .sort(["cluster", "count"], descending=[False, True])
+)
+
+fig = px.bar(
+    risk_by_cluster.to_pandas(),
+    x="cluster",
+    y="count",
+    color="gaming_addiction_risk_level",
+    barmode="group",
+    title="Addiction Risk Level by Cluster",
+    labels={"cluster": "Cluster", "count": "Count", "gaming_addiction_risk_level": "Risk Level"},
+    category_orders={"gaming_addiction_risk_level": ["Low", "Moderate", "High", "Severe"]},
+)
+fig.show()
+```
+
+The three clusters break down into what we're calling Consumed Gamers (Cluster 0), Engaged Gamers (Cluster 1), and Casual Gamers (Cluster 2). Cluster 0 averages 10.4 hours of gaming per day, only 4.6 hours of sleep, and scores high on social isolation; this group maps most closely to the High and Severe risk labels. Clusters 1 and 2 look considerably healthier across all three metrics.
+
+---
+
+## 4. Predictive Modeling: Classifying Addiction Risk
+
+The goal was to build something the client could actually use, a model that flags high-risk users based on a short set of behavioral inputs. We turned the four-level risk variable into a binary target: High or Severe = 1, Low or Moderate = 0.
+
+### 4.1 Feature Engineering and Preprocessing
+
+```{python}
+# Define binary target: High/Severe = 1, Low/Moderate = 0
+gaming_model = gaming.drop_nulls(subset=cluster_cols + ["gaming_addiction_risk_level", "age", "gender"])
+
+gaming_pd = gaming_model.with_columns(
+    pl.when(pl.col("gaming_addiction_risk_level").is_in(["High", "Severe"]))
+    .then(1)
+    .otherwise(0)
+    .alias("high_risk")
+).to_pandas()
+
+# Features
+numeric_features = [
+    "age",
+    "daily_gaming_hours",
+    "sleep_hours",
+    "social_isolation_score",
+    "exercise_hours_weekly",
+    "work_productivity_score",
+    "monthly_game_spending_usd",
+    "years_gaming",
+]
+
+categorical_features = ["gender", "game_genre", "gaming_platform"]
+
+target = "high_risk"
+
+# Drop rows missing any feature
+model_df = gaming_pd[numeric_features + categorical_features + [target]].dropna()
+
+X = model_df[numeric_features + categorical_features]
+y = model_df[target]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+```
+
+### 4.2 Model Comparison
+
+Before committing to a single model, we tested three classifiers: decision tree, random forest, and logistic regression. We wanted to see if there was a meaningful accuracy difference before deciding which one to move forward with.
+
+```{python}
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        ("num", StandardScaler(), numeric_features),
+        ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_features),
+    ]
+)
+
+# Logistic Regression
+pipe_lr = Pipeline(steps=[
+    ("preprocessor", preprocessor),
+    ("classifier", LogisticRegression(max_iter=1000, solver="lbfgs")),
+])
+pipe_lr.fit(X_train, y_train)
+lr_preds = pipe_lr.predict(X_test)
+lr_acc = accuracy_score(y_test, lr_preds)
+
+# Decision Tree
+pipe_dt = Pipeline(steps=[
+    ("preprocessor", preprocessor),
+    ("classifier", DecisionTreeClassifier(random_state=42)),
+])
+pipe_dt.fit(X_train, y_train)
+dt_preds = pipe_dt.predict(X_test)
+dt_acc = accuracy_score(y_test, dt_preds)
+
+# Random Forest
+pipe_rf = Pipeline(steps=[
+    ("preprocessor", preprocessor),
+    ("classifier", RandomForestClassifier(n_estimators=100, random_state=42)),
+])
+pipe_rf.fit(X_train, y_train)
+rf_preds = pipe_rf.predict(X_test)
+rf_acc = accuracy_score(y_test, rf_preds)
+
+print("Logistic Regression Accuracy:", round(lr_acc, 4))
+print("Decision Tree Accuracy:       ", round(dt_acc, 4))
+print("Random Forest Accuracy:       ", round(rf_acc, 4))
+
+comparison_df = pd.DataFrame({
+    "Model": ["Logistic Regression", "Decision Tree", "Random Forest"],
+    "Accuracy": [lr_acc, dt_acc, rf_acc]
+})
+
+fig = px.bar(
+    comparison_df,
+    x="Model",
+    y="Accuracy",
+    color="Model",
+    text_auto=".4f",
+    title="Model Accuracy Comparison",
+    range_y=[0, 1],
+)
+fig.update_layout(showlegend=False)
+fig.show()
+```
+
+The random forest had a slightly higher accuracy, but logistic regression was very close and has the major advantage of interpretability. Since a core deliverable for the client is a simple screening tool based on the top predictors, being able to read off coefficients matters more than squeezing out a marginal accuracy gain. We went with logistic regression.
+
+### 4.3 Final Model: Logistic Regression
+
+We use the logistic regression pipeline already trained above as our final model.
+
+```{python}
+# pipe_lr was already fitted in section 4.2 — we use it directly
+y_pred = pipe_lr.predict(X_test)
+```
+
+### 4.4 Model Evaluation
+
+```{python}
+acc = accuracy_score(y_test, y_pred)
+print("Accuracy:", round(acc, 4))
+print()
+print(classification_report(y_test, y_pred, target_names=["Low/Moderate", "High/Severe"]))
+```
+
+The model hits 89% accuracy on the held-out test set. It performs better on the Low/Moderate class (F1 = 0.92) than High/Severe (F1 = 0.81), which is expected given the class imbalance in the data, there are roughly 2.5x as many Low/Moderate cases. In a real deployment, false negatives (missing an at-risk user) would be more costly than false positives, so it'd be worth revisiting the classification threshold or using SMOTE to oversample the minority class.
+
+### 4.5 Confusion Matrix
+
+```{python}
+cm = confusion_matrix(y_test, y_pred)
+cm_labels = ["Low/Moderate", "High/Severe"]
+
+fig = px.imshow(
+    cm,
+    text_auto=True,
+    x=cm_labels,
+    y=cm_labels,
+    color_continuous_scale="Blues",
+    title="Confusion Matrix — Logistic Regression",
+    labels={"x": "Predicted", "y": "Actual"},
+)
+fig.show()
+```
+
+### 4.6 Feature Importances (Coefficients)
+
+```{python}
+# Extract coefficients from the logistic regression step
+coef_values = pipe_lr.named_steps["classifier"].coef_[0]
+cat_feature_names = pipe_lr.named_steps["preprocessor"].named_transformers_["cat"].get_feature_names_out(categorical_features)
+
+all_features = numeric_features + list(cat_feature_names)
+
+coef_df = pd.DataFrame({
+    "feature": all_features,
+    "coefficient": coef_values
+})
+
+coef_df["abs_coefficient"] = coef_df["coefficient"].abs()
+coef_df = coef_df.sort_values("abs_coefficient", ascending=False).head(15)
+
+fig = px.bar(
+    coef_df,
+    x="coefficient",
+    y="feature",
+    orientation="h",
+    title="Top 15 Feature Coefficients — Logistic Regression",
+    labels={"coefficient": "Coefficient", "feature": "Feature"},
+    color="coefficient",
+    color_continuous_scale="RdBu",
+)
+fig.update_layout(yaxis=dict(autorange="reversed"))
+fig.show()
+```
+
+Daily gaming hours has by far the largest positive coefficient, followed by sleep hours (negative — more sleep, lower risk) and social isolation score. Game genre also shows up — Battle Royale is positively associated with high risk, while Strategy and MOBA genres are negative. The platform variable matters too, with multi-platform users showing higher risk than single-platform players.
+
+---
+
+## 5. Association Rules Analysis
+
+This section looks at which symptoms tend to show up together across the gamer population. The idea is that if certain physical and behavioral symptoms co-occur at high rates, the campaign can lead with a message that resonates across multiple pain points at once — without having to name mental health directly.
+
+### 5.1 Build Transaction Data
+
+```{python}
+# Binarize relevant columns into symptom flags
+assoc_df = gaming.select([
+    "withdrawal_symptoms",
+    "loss_of_other_interests",
+    "continued_despite_problems",
+    "eye_strain",
+    "back_neck_pain",
+]).drop_nulls().to_pandas()
+
+# Convert TRUE/FALSE strings to boolean for each column
+symptom_cols = ["withdrawal_symptoms", "loss_of_other_interests", 
+                "continued_despite_problems", "eye_strain", "back_neck_pain"]
+
+for col in symptom_cols:
+    assoc_df[col] = assoc_df[col].astype(str).str.upper().map({"TRUE": True, "FALSE": False})
+
+assoc_df = assoc_df.dropna()
+```
+
+### 5.2 Run Apriori
+
+```{python}
+frequent_itemsets = apriori(assoc_df, min_support=0.15, use_colnames=True)
+frequent_itemsets.sort_values("support", ascending=False).head(10)
+```
+
+### 5.3 Generate Association Rules
+
+```{python}
+rules = association_rules(frequent_itemsets, metric="lift", min_threshold=0.5)
+rules_sorted = rules.sort_values("lift", ascending=False)
+rules_sorted[["antecedents", "consequents", "support", "confidence", "lift"]].head(15)
+```
+
+### 5.4 Visualize Rules: Confidence vs. Support
+
+```{python}
+rules_plot = rules_sorted.copy()
+
+# Convert frozensets to strings using a basic for loop
+antecedent_labels = []
+for itemset in rules_plot["antecedents"]:
+    antecedent_labels.append(", ".join(list(itemset)))
+
+consequent_labels = []
+for itemset in rules_plot["consequents"]:
+    consequent_labels.append(", ".join(list(itemset)))
+
+rules_plot["antecedents"] = antecedent_labels
+rules_plot["consequents"] = consequent_labels
+
+fig = px.scatter(
+    rules_plot,
+    x="support",
+    y="confidence",
+    size="lift",
+    color="lift",
+    hover_data=["antecedents", "consequents"],
+    title="Association Rules: Support vs. Confidence (bubble size = lift)",
+    labels={"support": "Support", "confidence": "Confidence", "lift": "Lift"},
+    color_continuous_scale="Viridis",
+)
+fig.show()
+```
+
+Eye strain stands out as the central co-occurring symptom, appearing in a wide range of high-lift rules alongside withdrawal symptoms, loss of other interests, and back/neck pain. This is useful for campaign design — physical symptoms like eye strain are a lower-stigma entry point than leading with addiction or mental health framing directly.
+
+---
+
+## 6. Findings and Recommendations
+
+### Key Findings
+
+Three analyses, three consistent signals.
+
+The segmentation identified three gamer profiles. Cluster 0 (10.4 hrs/day gaming, 4.6 hrs sleep, high isolation) is the highest-risk group and the natural primary target for the campaign. Clusters 1 and 2 show progressively healthier patterns.
+
+The logistic regression model (89% accuracy) confirmed that daily gaming hours, sleep hours, social isolation score, and work productivity score are the strongest predictors of high/severe addiction risk. These four variables alone provide enough signal to build a short screening intake.
+
+The association rules analysis showed that eye strain co-occurs with withdrawal symptoms, loss of other interests, and back/neck pain at high rates. Gamers showing physical symptoms are also more likely to show behavioral addiction indicators, which means physical health messaging is an effective and less stigmatizing campaign entry point.
+
+### Actionable Recommendations
+
+| Recommendation | Rationale |
+|---|---|
+| Target Cluster 0 (avg. 10.4 hrs/day, 4.6 hrs sleep, isolation score 6.8) for primary outreach | This segment has the highest concentration of High/Severe risk users |
+| Partner with university esports programs | High-risk users skew toward the 18–22 age range with active competitive gaming habits |
+| Campaign message: "Your eyes don't lie" | Eye strain co-occurs with withdrawal and loss of interests — physical symptoms are a low-stigma entry point |
+| Screen users with a 3-question intake (sleep hours, daily gaming hours, social hours) | Top model predictors enable a low-friction, data-backed triage tool |
+| Distribute via gaming platforms and Discord servers | Platform variable shows PC and multi-platform users are overrepresented in high-risk groups |
+
+---
+
+## 7. Limitations and Caveats
+
+One thing worth flagging upfront: the K-Means produced 3 behavioral segments, but the dataset has 4 pre-labeled risk levels. These are measuring different things, clusters are derived from behavior and risk labels are pre-assigned, so they were never going to map one-to-one. Cluster 0 contains a mix of High and Severe users, which the section 3.6 chart shows directly.
+
+The elbow plot didn't give us a clean answer on k. Inertia decreases fairly smoothly from k=2 to k=9, so k=3 was chosen because it produced the most interpretable and clearly separable cluster profiles, not because the plot pointed to it.
+
+On data quality: `grades_gpa` has 246 missing values (24.6%) and `work_productivity_score` has 326 missing (32.6%). Both were excluded from clustering, and the logistic regression drops affected rows, which reduces the effective training sample. Anything involving work productivity should be read with some caution.
+
+The dataset itself is synthetic, it was built on Kaggle to simulate relationships between gaming and mental health outcomes. Real-world data would be noisier and would likely bring the 89% model accuracy down.
+
+Finally, the test set has a roughly 2.5:1 class imbalance (96 Low/Moderate vs. 39 High/Severe cases). The model does better on the majority class (F1 = 0.92 vs. 0.81). In a real deployment, techniques like SMOTE oversampling or adjusting the classification threshold would help improve recall on the at-risk group, where false negatives are the more costly error.
+
+---
